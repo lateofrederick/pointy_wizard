@@ -17,7 +17,7 @@ import CodeEditor from './CodeEditor';
 import MenuBar from './MenuBar';
 import { usePipeline } from '../hooks/usePipeline';
 import { PipelineNode, PipelineEdge, PipelineEvent, PipelineConfig } from '../types/pipeline';
-import { validatePointyCode, compileToPointy, parsePointyCode } from '../utils/pointy';
+import { validatePointyCode } from '../utils/pointy';
 
 const nodeTypes = {
   event: EventNode,
