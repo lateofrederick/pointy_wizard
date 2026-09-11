@@ -110,7 +110,7 @@ export const PipelineConfiguration = ({
                     Default Value
                     <input
                       type="text"
-                      value={field.default || ''}
+                      value={field.default == null ? '' : String(field.default)}
                       onChange={(e) =>
                         updateField(index, { default: e.target.value })
                       }
