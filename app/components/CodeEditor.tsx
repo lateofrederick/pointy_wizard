@@ -30,7 +30,7 @@ const CodeEditor = ({ event, config, onCodeChange }: CodeEditorProps) => {
             {config.fields.map((field) => (
               <div key={field.name} className="flex items-start">
                 <code className="bg-gray-100 px-1 py-0.5 rounded">
-                  data['{field.name}']
+                  {`data['${field.name}']`}
                 </code>
                 <span className="ml-2 text-gray-600">
                   ({field.data_type}
@@ -45,7 +45,7 @@ const CodeEditor = ({ event, config, onCodeChange }: CodeEditorProps) => {
           </div>
         </div>
         <div className="p-2 bg-gray-50 text-xs text-gray-600">
-          Access pipeline fields using the data dictionary, e.g., data['field_name']
+          {`Access pipeline fields using the data dictionary, e.g., data['field_name']`}
         </div>
       </div>
       <div className="flex-1">
