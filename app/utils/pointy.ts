@@ -92,7 +92,7 @@ export const parsePointyCode = (code: string): Partial<Pipeline> => {
     // Check for connection
     const connectionMatch = trimmedLine.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*->\s*([a-zA-Z_][a-zA-Z0-9_]*)$/);
     if (connectionMatch) {
-      const [_, source, target] = connectionMatch;
+      const [, source, target] = connectionMatch;
       edges.push({
         id: `${source}-${target}`,
         source: `event-${source}`,

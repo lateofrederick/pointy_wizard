@@ -6,7 +6,7 @@ export interface PipelineField {
   name: string;
   required: boolean;
   data_type: DataType;
-  default?: any;
+  default?: unknown;
   batch_processor?: boolean;
   batch_size?: number;
 }
