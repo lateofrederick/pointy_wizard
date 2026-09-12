@@ -1,3 +1,20 @@
+/**
+ * @deprecated Superseded by `app/lib/pointy/`. Do not add to this file.
+ *
+ * All three functions below implement a syntax that does not exist. They emit
+ * and parse `EventName { ...python... }` blocks plus flat `A -> B` lines; real
+ * Pointy is a directive block and one chain expression, with the Python in
+ * separate class files. `validatePointyCode` lints Python — semicolons and
+ * indentation — not Pointy.
+ *
+ * Replacements, all covered by tests in app/lib/pointy/__tests__:
+ *   compileToPointy    -> emit(doc)
+ *   validatePointyCode -> lint(doc)
+ *   parsePointyCode    -> parse(source), still to be written (phase 5)
+ *
+ * Kept only because PipelineEditor still imports validatePointyCode. Delete the
+ * file in phase 3 when that component is rebuilt. See docs/ui-migration.md §5.
+ */
 import { Pipeline, PipelineNode, PipelineEdge } from '../types/pipeline';
 
 export const validatePointyCode = (code: string): string[] => {
