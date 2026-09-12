@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import { AppShell } from '../shell/AppShell';
 import { ThemeProvider } from '../../lib/theme';
+import { sampleDocument } from '../../lib/sampleDocument';
 
 /**
  * Mount smoke tests.
@@ -19,7 +20,7 @@ import { ThemeProvider } from '../../lib/theme';
 function mount() {
   return render(
     <ThemeProvider>
-      <AppShell />
+      <AppShell initial={sampleDocument} />
     </ThemeProvider>,
   );
 }
