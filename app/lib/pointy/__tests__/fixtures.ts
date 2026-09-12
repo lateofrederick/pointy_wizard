@@ -68,6 +68,7 @@ export const screen03: PointyDocument = {
   directives: { version: '1.2.0' },
   variables: [],
   sources: [{ namespace: 'hub', package: 'corp/approved-events', version: '3.0.0' }],
+  staged: [],
   definitions: {},
   layout: {},
   chain: {
@@ -192,6 +193,7 @@ export const screen17: PointyDocument = {
   directives: { version: '1.0.0' },
   variables: [],
   sources: [],
+  staged: [],
   definitions: {},
   layout: {},
   // Left-associative, which is what a parser produces for
@@ -249,6 +251,7 @@ export const screen16: PointyDocument = {
   directives: { version: '1.0.0', mode: 'CFG' },
   variables: [],
   sources: [],
+  staged: [],
   definitions: {},
   layout: {},
   chain: {

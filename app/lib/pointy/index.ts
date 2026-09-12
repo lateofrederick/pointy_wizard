@@ -12,3 +12,20 @@ export {
   setDirective,
   pruneLayout,
 } from './document';
+export {
+  newEventId,
+  hasSuccessor,
+  stageEvent,
+  updateStaged,
+  discardStaged,
+  connect,
+  setBranchLabel,
+  setAttribute,
+  removeAttribute,
+  renameAttribute,
+  setRetry,
+  removeEvent,
+} from './edit';
+export type { ConnectResult } from './edit';
+export { wireGeometry, wireMidpoint } from './geometry';
+export { highlight, TOKEN_CLASS } from './highlight';

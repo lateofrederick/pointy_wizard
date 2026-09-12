@@ -50,6 +50,7 @@ describe('emit — document rules', () => {
       variables: [],
       sources: [],
       chain: null,
+      staged: [],
       definitions: {},
       layout: {},
     });

@@ -209,6 +209,17 @@ export function lint(doc: PointyDocument): Diagnostic[] {
     }
   }
 
+  // --- staged events --------------------------------------------------------
+  for (const s of doc.staged) {
+    out.push({
+      code: 'unconnected-event',
+      severity: 'warning',
+      message: `${s.name} is on the canvas but not connected, so it will not run.`,
+      rule: 'A .pointy file holds one chain; an event outside it is not part of the program.',
+      target: { kind: 'event', eventId: s.id },
+    });
+  }
+
   // --- variables ------------------------------------------------------------
   const declared = new Set(doc.variables.map((v) => v.name));
   const used = new Set<string>();

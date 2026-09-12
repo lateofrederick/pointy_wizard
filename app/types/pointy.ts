@@ -150,6 +150,16 @@ export interface PointyDocument {
   variables: Variable[];
   sources: RegistrySource[];
   chain: Chain | null;
+  /**
+   * Events placed on the canvas but not yet connected to anything.
+   *
+   * A `.pointy` file holds exactly one chain, so an unconnected event is not
+   * part of the program — `emit()` ignores these entirely. The editor still has
+   * to let you drop a node before wiring it (screen 06), and lint warns that a
+   * staged event will not run. The moment it is connected it moves into the
+   * chain and leaves this list.
+   */
+  staged: EventRef[];
   definitions: Record<string, EventDefinition>;
   /** Presentation only. The emitter never reads this. Keyed by EventRef.id. */
   layout: Record<string, { x: number; y: number }>;
@@ -168,6 +178,7 @@ export function emptyDocument(name = 'untitled'): PointyDocument {
     variables: [],
     sources: [],
     chain: null,
+    staged: [],
     definitions: {},
     layout: {},
   };
