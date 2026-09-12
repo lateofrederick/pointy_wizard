@@ -1,4 +1,10 @@
-import type { Chain, EventRef, PointyDocument } from '../../types/pointy';
+import type {
+  Chain,
+  EventRef,
+  Expr,
+  PointyDocument,
+  RegistrySource,
+} from '../../types/pointy';
 import { mapEvents } from './walk';
 
 /**
@@ -131,6 +137,62 @@ export function setDirective<K extends keyof PointyDocument['directives']>(
   value: PointyDocument['directives'][K],
 ): PointyDocument {
   return { ...doc, directives: { ...doc.directives, [key]: value } };
+}
+
+/* --- variables --------------------------------------------------------------
+ *
+ * `@name = expr`, emitted above the chain. A variable is referenced from an
+ * attribute as `$name`, so renaming one does NOT rewrite the references: the
+ * lint's `undefined-variable` is what tells the user the reference is now
+ * dangling, and it names the variable that went missing. Silently rewriting
+ * the program from a rename in a side panel would be a worse surprise.
+ */
+
+/** Add or replace by name. Order is preserved; a new variable goes last. */
+export function setVariable(
+  doc: PointyDocument,
+  name: string,
+  value: Expr,
+  previousName?: string,
+): PointyDocument {
+  const key = previousName ?? name;
+  const index = doc.variables.findIndex((v) => v.name === key);
+
+  if (index === -1) return { ...doc, variables: [...doc.variables, { name, value }] };
+
+  const variables = [...doc.variables];
+  variables[index] = { name, value };
+  return { ...doc, variables };
+}
+
+export function removeVariable(doc: PointyDocument, name: string): PointyDocument {
+  return { ...doc, variables: doc.variables.filter((v) => v.name !== name) };
+}
+
+/* --- registry sources -------------------------------------------------------
+ *
+ * A source registers a namespace, which is what makes `hub::Foo` resolvable.
+ * Identity is the package, not the namespace: the same namespace can be
+ * registered more than once with different packages.
+ */
+
+export function setSource(
+  doc: PointyDocument,
+  source: RegistrySource,
+  previousPackage?: string,
+): PointyDocument {
+  const key = previousPackage ?? source.package;
+  const index = doc.sources.findIndex((s) => s.package === key);
+
+  if (index === -1) return { ...doc, sources: [...doc.sources, source] };
+
+  const sources = [...doc.sources];
+  sources[index] = source;
+  return { ...doc, sources };
+}
+
+export function removeSource(doc: PointyDocument, packageName: string): PointyDocument {
+  return { ...doc, sources: doc.sources.filter((s) => s.package !== packageName) };
 }
 
 /** Drop layout entries for occurrences that no longer exist. */

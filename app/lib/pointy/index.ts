@@ -10,6 +10,10 @@ export {
   setWireOperator,
   appendEvent,
   setDirective,
+  setVariable,
+  removeVariable,
+  setSource,
+  removeSource,
   pruneLayout,
 } from './document';
 export {
@@ -29,3 +33,4 @@ export {
 export type { ConnectResult } from './edit';
 export { wireGeometry, wireMidpoint } from './geometry';
 export { highlight, TOKEN_CLASS } from './highlight';
+export { parse, tryParse, PointyParseError } from './parse';
