@@ -22,6 +22,8 @@ export interface FlowNode {
   position: { x: number; y: number };
   /** True when this occurrence is not the first of its event name (CFG reuse). */
   reused: boolean;
+  /** On the canvas but not in the chain, so not yet part of the program. */
+  staged: boolean;
 }
 
 export interface FlowEdge {
@@ -124,8 +126,22 @@ export function chainToFlow(doc: PointyDocument): FlowGraph {
       ref,
       position: doc.layout[ref.id] ?? autoPosition(i),
       reused,
+      staged: false,
     };
   });
 
-  return { nodes, edges: doc.chain ? edgesOf(doc.chain) : [] };
+  // Staged events are on the canvas but contribute no wires, because they are
+  // not in the program yet.
+  const stagedNodes: FlowNode[] = doc.staged.map((ref, i) => ({
+    id: ref.id,
+    ref,
+    position: doc.layout[ref.id] ?? autoPosition(refs.length + i),
+    reused: false,
+    staged: true,
+  }));
+
+  return {
+    nodes: [...nodes, ...stagedNodes],
+    edges: doc.chain ? edgesOf(doc.chain) : [],
+  };
 }

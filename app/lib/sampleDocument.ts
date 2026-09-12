@@ -74,6 +74,7 @@ export const sampleDocument: PointyDocument = {
     { namespace: 'pypi', package: 'volnux-standard-events', version: '1.5.0' },
     { namespace: 'github', package: 'my-team/volnux-events', version: '2.1.0' },
   ],
+  staged: [],
   definitions: {
     'validate_profile.py': {
       filename: 'validate_profile.py',
