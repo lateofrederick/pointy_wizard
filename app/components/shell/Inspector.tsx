@@ -1,14 +1,16 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { PointyDocumentStore } from '../../hooks/usePointyDocument';
-import type { Attr, Namespace } from '../../types/pointy';
+import type { Attr, Namespace, RegistrySource } from '../../types/pointy';
 import { emitExpr } from '../../lib/pointy/emit';
 import { cn } from '../../lib/cn';
 import { Button, Callout, Chip, Field, SectionHeader } from '../ui';
 import { DefinitionEditor } from '../editor/DefinitionEditor';
 import { ConnectionInspector } from './ConnectionInspector';
 import { ExpressionEditor } from './ExpressionEditor';
+import { AuthoriseEventHub } from './AuthoriseEventHub';
+import { api, type GrantView } from '../../lib/api';
 
 type Tab = 'properties' | 'definition';
 
@@ -256,10 +258,21 @@ function AttributeSection({
   );
 }
 
-/** Nothing selected: the file's own properties — Figma screen 13. */
+/**
+ * Nothing selected: the file's own properties — Figma screen 13.
+ *
+ * Variables and sources are edited here and nowhere else. A source is what
+ * makes a non-local namespace resolvable, so adding one is the fix the
+ * `unresolved-namespace` diagnostic is asking for.
+ */
 function PipelineInspector({ store }: { store: PointyDocumentStore }) {
   const { doc } = store;
   const mode = doc.directives.mode ?? 'CFG';
+
+  /** Which variable is open in the expression editor; '' means a new one. */
+  const [editingVariable, setEditingVariable] = useState<string | null>(null);
+  const [newVariableName, setNewVariableName] = useState('');
+  const [editingSource, setEditingSource] = useState<string | null>(null);
 
   return (
     <aside className="flex w-[340px] shrink-0 flex-col border-l border-edge bg-bg-surface">
@@ -279,7 +292,7 @@ function PipelineInspector({ store }: { store: PointyDocumentStore }) {
               <button
                 key={m}
                 type="button"
-                onClick={() => store.setDoc({ ...doc, directives: { ...doc.directives, mode: m } })}
+                onClick={() => store.setMode(m)}
                 className={cn(
                   'flex-1 cursor-pointer rounded-[4px] py-1.5 font-mono text-[10.5px] font-medium',
                   mode === m ? 'bg-seq-tint text-seq' : 'text-tertiary hover:text-secondary',
@@ -295,30 +308,129 @@ function PipelineInspector({ store }: { store: PointyDocumentStore }) {
           </p>
         </div>
 
-        <SectionHeader action="＋ add">VARIABLES</SectionHeader>
-        <div className="rounded-[7px] border border-edge bg-bg-sunken px-3 py-2.5">
-          {doc.variables.length === 0 ? (
+        <SectionHeader
+          action="＋ add"
+          onAction={() => {
+            setNewVariableName(nextVariableName(doc.variables.map((v) => v.name)));
+            setEditingVariable('');
+          }}
+        >
+          VARIABLES
+        </SectionHeader>
+
+        <div className="flex flex-col gap-1 rounded-[7px] border border-edge bg-bg-sunken px-3 py-2.5">
+          {doc.variables.length === 0 && editingVariable === null && (
             <p className="font-sans text-[9.5px] text-tertiary">None declared.</p>
-          ) : (
-            doc.variables.map((v) => (
-              <p key={v.name} className="font-mono text-[10.5px]">
-                <span className="text-accent">@{v.name}</span>
-                <span className="text-code"> = </span>
-                <span className="text-template">{emitExpr(v.value)}</span>
-              </p>
-            ))
+          )}
+
+          {doc.variables.map((v) =>
+            editingVariable === v.name ? (
+              <ExpressionEditor
+                key={v.name}
+                name={`@${v.name}`}
+                value={v.value}
+                onCommit={(next) => {
+                  store.upsertVariable(v.name, next);
+                  setEditingVariable(null);
+                }}
+                onCancel={() => setEditingVariable(null)}
+              />
+            ) : (
+              <div key={v.name} className="group flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingVariable(v.name)}
+                  className="flex-1 cursor-pointer truncate text-left font-mono text-[10.5px]"
+                >
+                  <span className="text-accent">@{v.name}</span>
+                  <span className="text-code"> = </span>
+                  <span className="text-template">{emitExpr(v.value)}</span>
+                </button>
+                <RemoveButton
+                  label={`Remove variable ${v.name}`}
+                  onClick={() => store.deleteVariable(v.name)}
+                />
+              </div>
+            ),
+          )}
+
+          {editingVariable === '' && (
+            <div className="flex flex-col gap-1.5">
+              <input
+                value={newVariableName}
+                onChange={(e) => setNewVariableName(e.target.value)}
+                aria-label="New variable name"
+                className="h-7 rounded-[5px] border border-edge bg-bg-surface px-2 font-mono text-[10.5px] text-accent outline-none focus:border-seq"
+              />
+              <ExpressionEditor
+                name={`@${newVariableName || 'name'}`}
+                value={{ kind: 'literal', value: null }}
+                onCommit={(next) => {
+                  const name = newVariableName.trim();
+                  if (name) store.upsertVariable(name, next);
+                  setEditingVariable(null);
+                }}
+                onCancel={() => setEditingVariable(null)}
+              />
+            </div>
           )}
         </div>
 
-        <SectionHeader action="＋ add">SOURCES</SectionHeader>
+        <SectionHeader action="＋ add" onAction={() => setEditingSource('')}>
+          SOURCES
+        </SectionHeader>
+
         <div className="flex flex-col gap-1 rounded-[7px] border border-edge bg-bg-sunken px-3 py-2.5">
-          {doc.sources.map((s) => (
-            <p key={s.package} className="flex gap-2 font-mono text-[10px]">
-              <span className="w-12 shrink-0 text-flow">{s.namespace}</span>
-              <span className="flex-1 truncate text-secondary">{s.package}</span>
-              <span className="text-tertiary">v{s.version}</span>
+          {doc.sources.length === 0 && editingSource === null && (
+            <p className="font-sans text-[9.5px] text-tertiary">
+              None registered. A <span className="font-mono">hub::</span>,{' '}
+              <span className="font-mono">pypi::</span> or{' '}
+              <span className="font-mono">github::</span> event cannot resolve without one.
             </p>
-          ))}
+          )}
+
+          {doc.sources.map((s) =>
+            editingSource === s.package ? (
+              <SourceForm
+                key={s.package}
+                source={s}
+                onCommit={(next) => {
+                  store.upsertSource(next, s.package);
+                  setEditingSource(null);
+                }}
+                onCancel={() => setEditingSource(null)}
+              />
+            ) : (
+              <div key={s.package} className="flex flex-col gap-1">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingSource(s.package)}
+                    className="flex flex-1 cursor-pointer gap-2 truncate text-left font-mono text-[10px]"
+                  >
+                    <span className="w-12 shrink-0 text-flow">{s.namespace}</span>
+                    <span className="flex-1 truncate text-secondary">{s.package}</span>
+                    <span className="text-tertiary">v{s.version}</span>
+                  </button>
+                  <RemoveButton
+                    label={`Remove source ${s.package}`}
+                    onClick={() => store.deleteSource(s.package)}
+                  />
+                </div>
+                {s.namespace === 'hub' && <GrantRow packageName={s.package} />}
+              </div>
+            ),
+          )}
+
+          {editingSource === '' && (
+            <SourceForm
+              onCommit={(next) => {
+                store.upsertSource(next);
+                setEditingSource(null);
+              }}
+              onCancel={() => setEditingSource(null)}
+            />
+          )}
         </div>
 
         <div className="mt-2">
@@ -326,6 +438,199 @@ function PipelineInspector({ store }: { store: PointyDocumentStore }) {
         </div>
       </div>
     </aside>
+  );
+}
+
+/**
+ * Grant state for one hub package — the entry point to screen 19.
+ *
+ * A hub source names a registry; this says whether the user has authorised
+ * access to it, and lets them grant or revoke. The grant is per user, so it is
+ * fetched rather than read off the document.
+ */
+function GrantRow({ packageName }: { packageName: string }) {
+  const [grant, setGrant] = useState<GrantView | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    api
+      .listGrants()
+      .then(({ grants }) => {
+        if (!live) return;
+        setGrant(grants.find((g) => g.package === packageName) ?? null);
+        setLoaded(true);
+      })
+      .catch(() => live && setLoaded(true));
+    return () => {
+      live = false;
+    };
+  }, [packageName]);
+
+  async function revoke() {
+    await api.revokeGrant(packageName).catch(() => undefined);
+    setGrant(null);
+  }
+
+  if (!loaded) return null;
+
+  return (
+    <>
+      <div className="flex items-center gap-2 pl-[3.5rem]">
+        {grant ? (
+          <>
+            <span className="font-sans text-[9px] text-keyword">
+              ✓ authorised · {grant.scopes.join(', ')}
+            </span>
+            <span className="flex-1" />
+            <button
+              type="button"
+              onClick={() => setOpen(true)}
+              className="cursor-pointer font-sans text-[9px] text-seq hover:underline"
+            >
+              change
+            </button>
+            <button
+              type="button"
+              onClick={revoke}
+              className="cursor-pointer font-sans text-[9px] text-tertiary hover:text-danger"
+            >
+              revoke
+            </button>
+          </>
+        ) : (
+          <>
+            <span className="font-sans text-[9px] text-tertiary">not connected</span>
+            <span className="flex-1" />
+            <button
+              type="button"
+              onClick={() => setOpen(true)}
+              className="cursor-pointer font-sans text-[9px] text-seq hover:underline"
+            >
+              Authorise EventHub →
+            </button>
+          </>
+        )}
+      </div>
+
+      {open && (
+        <AuthoriseEventHub
+          packageName={packageName}
+          existing={grant ?? undefined}
+          onClose={() => setOpen(false)}
+          onGranted={(next) => {
+            setGrant(next);
+            setOpen(false);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+/** `@var1`, `@var2`, … — a name that is free, so the editor opens on something. */
+function nextVariableName(taken: string[]): string {
+  for (let n = 1; ; n += 1) {
+    const candidate = `var${n}`;
+    if (!taken.includes(candidate)) return candidate;
+  }
+}
+
+function RemoveButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      onClick={onClick}
+      className="shrink-0 cursor-pointer px-1 font-sans text-[11px] text-tertiary hover:text-danger"
+    >
+      ✕
+    </button>
+  );
+}
+
+const REGISTRY_NAMESPACES = ['hub', 'pypi', 'github'] as const;
+
+/**
+ * A registry source is three plain strings, so it gets plain inputs rather than
+ * the expression editor. The namespace is a fixed set — `local` is implicit and
+ * can never be registered.
+ */
+function SourceForm({
+  source,
+  onCommit,
+  onCancel,
+}: {
+  source?: RegistrySource;
+  onCommit: (next: RegistrySource) => void;
+  onCancel: () => void;
+}) {
+  const [namespace, setNamespace] = useState<RegistrySource['namespace']>(
+    source?.namespace ?? 'hub',
+  );
+  const [pkg, setPkg] = useState(source?.package ?? '');
+  const [version, setVersion] = useState(source?.version ?? '');
+
+  const complete = pkg.trim() !== '' && version.trim() !== '';
+
+  function commit() {
+    if (!complete) return;
+    onCommit({ namespace, package: pkg.trim(), version: version.trim() });
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5 rounded-[6px] border border-edge-strong bg-bg-raised p-2">
+      <div className="flex gap-1">
+        {REGISTRY_NAMESPACES.map((n) => (
+          <button
+            key={n}
+            type="button"
+            onClick={() => setNamespace(n)}
+            className={cn(
+              'flex-1 cursor-pointer rounded-[4px] py-1 font-mono text-[9.5px]',
+              namespace === n ? 'bg-flow-tint text-flow' : 'text-tertiary hover:text-secondary',
+            )}
+          >
+            {n}
+          </button>
+        ))}
+      </div>
+
+      <input
+        value={pkg}
+        onChange={(e) => setPkg(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commit();
+          if (e.key === 'Escape') onCancel();
+          e.stopPropagation();
+        }}
+        placeholder="corp/approved-events"
+        aria-label="Package"
+        className="h-7 rounded-[5px] border border-edge bg-bg-sunken px-2 font-mono text-[10px] text-secondary outline-none placeholder:text-disabled focus:border-seq"
+      />
+      <input
+        value={version}
+        onChange={(e) => setVersion(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commit();
+          if (e.key === 'Escape') onCancel();
+          e.stopPropagation();
+        }}
+        placeholder="3.0.0"
+        aria-label="Version"
+        className="h-7 rounded-[5px] border border-edge bg-bg-sunken px-2 font-mono text-[10px] text-secondary outline-none placeholder:text-disabled focus:border-seq"
+      />
+
+      <div className="flex gap-2 pt-0.5">
+        <Button kind="ghost" className="h-7 flex-1 px-0" onClick={commit} disabled={!complete}>
+          {source ? 'Update' : 'Add'}
+        </Button>
+        <Button kind="secondary" className="h-7 flex-1 px-0" onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+    </div>
   );
 }
 

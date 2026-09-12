@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useMemo, useState } from 'react';
-import type { EventRef, Expr, PointyDocument } from '../types/pointy';
+import type { EventRef, Expr, PointyDocument, RegistrySource } from '../types/pointy';
 import {
   chainToFlow,
   connect as connectOp,
@@ -12,9 +12,13 @@ import {
   newEventId,
   removeAttribute,
   removeEvent,
+  removeSource,
+  removeVariable,
   setAttribute,
   setNodePosition,
   setRetry,
+  setSource,
+  setVariable,
   setWireOperator,
   stageEvent,
   updateEvent,
@@ -148,6 +152,31 @@ export function usePointyDocument(initial: PointyDocument) {
     [],
   );
 
+  /* Pipeline-level edits — screen 13. These change the file, not a node. */
+
+  const upsertVariable = useCallback(
+    (name: string, value: Expr, previousName?: string) => {
+      setDoc((d) => setVariable(d, name, value, previousName));
+    },
+    [],
+  );
+
+  const deleteVariable = useCallback((name: string) => {
+    setDoc((d) => removeVariable(d, name));
+  }, []);
+
+  const upsertSource = useCallback((source: RegistrySource, previousPackage?: string) => {
+    setDoc((d) => setSource(d, source, previousPackage));
+  }, []);
+
+  const deleteSource = useCallback((packageName: string) => {
+    setDoc((d) => removeSource(d, packageName));
+  }, []);
+
+  const setMode = useCallback((mode: 'DAG' | 'CFG' | undefined) => {
+    setDoc((d) => ({ ...d, directives: { ...d.directives, mode } }));
+  }, []);
+
   const setDefinitionSource = useCallback((definitionId: string, next: string) => {
     setDoc((d) => {
       const existing = d.definitions[definitionId];
@@ -183,6 +212,11 @@ export function usePointyDocument(initial: PointyDocument) {
     upsertAttribute,
     deleteAttribute,
     changeRetry,
+    upsertVariable,
+    deleteVariable,
+    upsertSource,
+    deleteSource,
+    setMode,
     setDefinitionSource,
   };
 }
