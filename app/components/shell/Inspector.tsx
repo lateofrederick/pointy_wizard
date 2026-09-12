@@ -2,11 +2,13 @@
 
 import { useState } from 'react';
 import type { PointyDocumentStore } from '../../hooks/usePointyDocument';
-import type { Namespace } from '../../types/pointy';
+import type { Attr, Namespace } from '../../types/pointy';
 import { emitExpr } from '../../lib/pointy/emit';
 import { cn } from '../../lib/cn';
-import { Callout, Chip, Field, SectionHeader } from '../ui';
+import { Button, Callout, Chip, Field, SectionHeader } from '../ui';
 import { DefinitionEditor } from '../editor/DefinitionEditor';
+import { ConnectionInspector } from './ConnectionInspector';
+import { ExpressionEditor } from './ExpressionEditor';
 
 type Tab = 'properties' | 'definition';
 
@@ -19,8 +21,10 @@ type Tab = 'properties' | 'definition';
  */
 export function Inspector({ store }: { store: PointyDocumentStore }) {
   const [tab, setTab] = useState<Tab>('properties');
-  const { doc, selectedEvent, patchEvent, diagnostics, setDefinitionSource } = store;
+  const { doc, selectedEvent, selectedWire, patchEvent, diagnostics, setDefinitionSource } = store;
 
+  // A selected wire takes over the panel entirely — Figma screen 07.
+  if (selectedWire) return <ConnectionInspector store={store} />;
   if (!selectedEvent) return <PipelineInspector store={store} />;
 
   const ref = selectedEvent;
@@ -97,24 +101,31 @@ export function Inspector({ store }: { store: PointyDocumentStore }) {
             hint="off · min 2 when set"
           />
 
-          <SectionHeader action="＋ add">ATTRIBUTES</SectionHeader>
-          <div className="flex flex-col gap-1.5">
-            {[...(ref.meta?.metaAttributes ?? []), ...ref.attributes].map((a) => (
-              <div
-                key={a.name}
-                className="flex items-center gap-2 rounded-[6px] border border-edge bg-bg-sunken px-3 py-2"
-              >
-                <span className="font-mono text-[10.5px] text-code">{a.name}</span>
-                <span className="font-mono text-[10.5px] text-tertiary">=</span>
-                <span className="flex-1 truncate font-mono text-[10.5px] text-template">
-                  {emitExpr(a.value)}
-                </span>
+          <AttributeSection store={store} eventId={ref.id} attributes={ref.attributes} />
+
+          {ref.meta && ref.meta.metaAttributes.length > 0 && (
+            <>
+              <SectionHeader>META-LEVEL ATTRIBUTES</SectionHeader>
+              <div className="flex flex-col gap-1.5">
+                {ref.meta.metaAttributes.map((a) => (
+                  <div
+                    key={a.name}
+                    className="flex items-center gap-2 rounded-[6px] border border-keyword/30 bg-keyword-tint px-3 py-2"
+                  >
+                    <span className="font-mono text-[10.5px] text-code">{a.name}</span>
+                    <span className="font-mono text-[10.5px] text-tertiary">=</span>
+                    <span className="flex-1 truncate font-mono text-[10.5px] text-template">
+                      {emitExpr(a.value)}
+                    </span>
+                  </div>
+                ))}
               </div>
-            ))}
-            {ref.attributes.length === 0 && !ref.meta?.metaAttributes.length && (
-              <p className="font-sans text-[9.5px] text-tertiary">No attributes set.</p>
-            )}
-          </div>
+              <p className="-mt-2 font-sans text-[9px] leading-[14px] text-tertiary">
+                Meta-level attributes configure the wrapper. Template-level ones above are
+                inherited by every instance the mode creates.
+              </p>
+            </>
+          )}
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col px-[14px] py-3">
@@ -134,6 +145,114 @@ export function Inspector({ store }: { store: PointyDocumentStore }) {
         </div>
       )}
     </aside>
+  );
+}
+
+/**
+ * Template-level attributes, editable. Values go through the expression editor
+ * rather than a plain text field, because an attribute value is a Pointy
+ * expression and the grammar is small enough to check as you type.
+ */
+function AttributeSection({
+  store,
+  eventId,
+  attributes,
+}: {
+  store: PointyDocumentStore;
+  eventId: string;
+  attributes: Attr[];
+}) {
+  const [editing, setEditing] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState('');
+
+  return (
+    <>
+      <SectionHeader action="＋ add" onAction={() => setAdding(true)}>
+        ATTRIBUTES
+      </SectionHeader>
+
+      <div className="flex flex-col gap-1.5">
+        {attributes.map((a) =>
+          editing === a.name ? (
+            <ExpressionEditor
+              key={a.name}
+              name={a.name}
+              value={a.value}
+              onCancel={() => setEditing(null)}
+              onCommit={(next) => {
+                store.upsertAttribute(eventId, a.name, next);
+                setEditing(null);
+              }}
+            />
+          ) : (
+            <div
+              key={a.name}
+              className="flex items-center gap-2 rounded-[6px] border border-edge bg-bg-sunken px-3 py-2"
+            >
+              <span className="font-mono text-[10.5px] text-code">{a.name}</span>
+              <span className="font-mono text-[10.5px] text-tertiary">=</span>
+              <button
+                type="button"
+                onClick={() => setEditing(a.name)}
+                className="flex-1 cursor-pointer truncate text-left font-mono text-[10.5px] text-template hover:underline"
+              >
+                {emitExpr(a.value)}
+              </button>
+              <button
+                type="button"
+                onClick={() => store.deleteAttribute(eventId, a.name)}
+                aria-label={`Remove ${a.name}`}
+                className="cursor-pointer font-sans text-[11px] text-tertiary hover:text-danger"
+              >
+                ✕
+              </button>
+            </div>
+          ),
+        )}
+
+        {attributes.length === 0 && !adding && (
+          <p className="font-sans text-[9.5px] text-tertiary">No attributes set.</p>
+        )}
+
+        {adding && (
+          <div className="flex items-center gap-2 rounded-[6px] border border-seq/60 bg-bg-sunken px-3 py-2">
+            <input
+              autoFocus
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  setAdding(false);
+                  setNewName('');
+                }
+                if (e.key === 'Enter' && newName.trim()) {
+                  store.upsertAttribute(eventId, newName.trim(), {
+                    kind: 'literal',
+                    value: '',
+                  });
+                  setEditing(newName.trim());
+                  setAdding(false);
+                  setNewName('');
+                }
+              }}
+              placeholder="attribute_name"
+              aria-label="New attribute name"
+              className="flex-1 bg-transparent font-mono text-[10.5px] text-code outline-none placeholder:text-disabled"
+            />
+            <Button
+              kind="ghost"
+              onClick={() => {
+                setAdding(false);
+                setNewName('');
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
+        )}
+      </div>
+    </>
   );
 }
 

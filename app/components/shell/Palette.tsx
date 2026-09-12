@@ -1,9 +1,21 @@
 'use client';
 
 import { useState } from 'react';
-import type { Namespace } from '../../types/pointy';
+import type { MetaMode, Namespace } from '../../types/pointy';
 import { cn } from '../../lib/cn';
 import { Button } from '../ui';
+import { DRAG_MIME, type PaletteDragPayload } from '../canvas/dragPayload';
+
+/** Attach the payload the canvas expects on drop. */
+function dragProps(payload: PaletteDragPayload) {
+  return {
+    draggable: true,
+    onDragStart: (e: React.DragEvent) => {
+      e.dataTransfer.setData(DRAG_MIME, JSON.stringify(payload));
+      e.dataTransfer.effectAllowed = 'copy';
+    },
+  };
+}
 
 /**
  * The EventHub registry — Figma component set 61:5841 (PaletteTile).
@@ -112,7 +124,14 @@ export function Palette() {
               <button
                 key={m}
                 type="button"
-                className="cursor-pointer text-left font-mono text-[10px] font-medium text-keyword hover:underline"
+                {...dragProps({
+                  name: m,
+                  namespace: 'local',
+                  // Dropping a mode gives an unbound wrapper; the template is
+                  // named in place, like any other draft.
+                  meta: { mode: m as MetaMode, template: 'Template', metaAttributes: [] },
+                })}
+                className="cursor-grab text-left font-mono text-[10px] font-medium text-keyword hover:underline"
               >
                 {m}
               </button>
@@ -158,6 +177,11 @@ function PaletteTile({ tile }: { tile: Tile }) {
     <div
       role="button"
       tabIndex={0}
+      {...dragProps({
+        name: tile.name,
+        namespace: tile.namespace,
+        version: tile.meta.match(/v([\d.]+)/)?.[1],
+      })}
       className={cn(
         'flex cursor-grab overflow-hidden rounded-[6px] border border-edge-subtle bg-bg-raised',
         'hover:border-edge-strong',
@@ -195,6 +219,7 @@ function BlankTile() {
     <div
       role="button"
       tabIndex={0}
+      {...dragProps({ name: 'NewEvent', namespace: 'local' })}
       className="flex cursor-grab items-center gap-2 rounded-[6px] border border-dashed border-seq/60 px-[9px] py-2"
     >
       <span aria-hidden className="font-sans text-[11px] text-seq/80">
