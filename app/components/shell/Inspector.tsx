@@ -139,6 +139,7 @@ export function Inspector({ store }: { store: PointyDocumentStore }) {
             <DefinitionEditor
               filename={definition.filename}
               source={definition.source}
+              eventName={ref.name}
               onChange={(next) => setDefinitionSource(definition.filename, next)}
             />
           ) : (

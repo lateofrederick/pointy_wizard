@@ -4,6 +4,7 @@ import { currentUser } from '../../lib/server/auth';
 import { emit } from '../../lib/pointy/emit';
 import { tryParse } from '../../lib/pointy/parse';
 import { lint } from '../../lib/pointy/lint';
+import { lintDefinitions } from '../../lib/definition/lintDefinition';
 import { events } from '../../lib/pointy/walk';
 import { emptyDocument, type Chain } from '../../types/pointy';
 
@@ -55,7 +56,7 @@ function summarise(p: StoredPipeline): PipelineSummary {
   }
 
   const doc = { ...parsed.doc, sources: p.sources, definitions: p.definitions };
-  const diagnostics = lint(doc);
+  const diagnostics = [...lint(doc), ...lintDefinitions(doc)];
   // Counting occurrences means walking the chain, which is cheap and avoids
   // storing a denormalised count that could drift from the source.
   const eventCount = events(doc.chain).length;

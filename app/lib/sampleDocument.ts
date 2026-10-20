@@ -79,14 +79,13 @@ export const sampleDocument: PointyDocument = {
     'validate_profile.py': {
       filename: 'validate_profile.py',
       source: [
-        'from pointy import EventBase',
-        'from pointy.exec import ThreadPoolExecutor',
+        'from volnux import EventBase',
         '',
         '',
         'class ValidateProfile(EventBase):',
         '    """Validate one profile record."""',
         '',
-        '    executor = ThreadPoolExecutor',
+        '    executor = "thread"',
         '',
         '    async def process(self, *args, **kwargs):',
         '        profile = kwargs["profile"]',
@@ -98,7 +97,7 @@ export const sampleDocument: PointyDocument = {
     'route_decision.py': {
       filename: 'route_decision.py',
       source: [
-        'from pointy import EventBase',
+        'from volnux import EventBase',
         '',
         '',
         'class RouteDecision(EventBase):',

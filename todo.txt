@@ -366,6 +366,44 @@ Node ids (3:2) open in Figma via ?node-id=3-2
   - Screen 12: the RUN OUTPUT view of the output panel (lib/runView.ts).
 
 
+== DEFINITION EDITOR — linting the Python against the Volnux contract ==  DONE 2026-10-20
+
+[x] app/lib/definition/lintDefinition.ts — a line-scanner, not a parser.
+      Rules mirror what the framework itself enforces, so a definition that
+      passes will import cleanly on the platform:
+        py-legacy-pointy-import  `from pointy` -> the package is volnux
+        py-missing-volnux-import event defined, no volnux binding
+        py-no-event              no EventBase subclass and no @event fn
+        py-missing-process       EventBase subclass with no process()
+        py-process-needs-self    first parameter is not self (framework TypeError)
+        py-process-not-async     class-based plain def (docs: must be async)
+        py-forbidden-init        __init__ override (EventBase raises)
+        py-goto-descriptor-range literal descriptor outside 0-9
+        py-goto-arity            goto without (descriptor, ok, result)
+        py-name-mismatch         class/fn identity != the pipeline event's name
+        py-retry-policy-key      unknown key in a retry_policy dict
+        py-unknown-attribute     class attr not in EventBase's set (+ suggestion)
+        py-multiple-events       more than one event in the file
+        py-return-annotation     annotated, but not Tuple[bool, Any]
+      Identity is resolved the way the framework resolves it: class name, or
+      `name = "..."`, or @event(name="..."). The check runs only when the
+      definition is linked to an event (eventName passed).
+[x] Monaco markers in DefinitionEditor — live squiggles + a ✕n / ⚠m chip in
+      the editor header. Markers are set under the owner `pointy-definition`
+      and cleared on unmount.
+[x] lintDefinitions(doc) bridges into the document diagnostics (usePointyDocument
+      and the /api/pipelines summary) — a broken definition is an error in the
+      problems list, blocks the publish gate, and shows as a callout in the
+      Properties tab, same as a structural problem.
+[x] sampleDocument: `from pointy` -> `from volnux`; ThreadPoolExecutor import
+      replaced by `executor = "thread"` (the string the registry maps).
+[x] attachDefinition stub: async process(*args, **kwargs); docstring says
+      descriptors 0-9, not 2-9 (0 and 1 are legal — they are just the first
+      two paths).
+[x] 28 tests in lib/definition/__tests__/lintDefinition.test.ts.
+      Full gate green: tsc / 310 tests / eslint / build.
+
+
 == UNDESIGNED — needs design before planning ==                              §11
 
 [ ] Browsing EventHub: results, component detail, versions, install

@@ -926,11 +926,11 @@ class ${name}(EventBase):
     """Return (ok, result). The second value is the RESULT, not a descriptor.
 
     For anything beyond success and failure, call
-    self.goto(descriptor, ok, result) with an integer 2-9.
+    self.goto(descriptor, ok, result) with an integer 0-9.
     """
 
-    def process(self, payload):
-        return True, payload
+    async def process(self, *args, **kwargs):
+        return True, kwargs
 `;
 }
 

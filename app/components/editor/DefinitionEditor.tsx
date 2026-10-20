@@ -1,7 +1,13 @@
 'use client';
 
+import { useEffect, useMemo, useRef } from 'react';
 import { Editor, type Monaco } from '@monaco-editor/react';
 import { useTheme } from '../../lib/theme';
+import { lintDefinitionSource } from '../../lib/definition/lintDefinition';
+
+type EditorInstance = Parameters<
+  NonNullable<Parameters<typeof Editor>[0]['onMount']>
+>[0];
 
 /**
  * The Definition tab — Figma screen 04.
@@ -65,16 +71,62 @@ function defineThemes(monaco: Monaco) {
   }
 }
 
+/** Monaco marker owner — so these clear cleanly and never mix with others. */
+const MARKER_SOURCE = 'pointy-definition';
+
 export function DefinitionEditor({
   filename,
   source,
+  eventName,
   onChange,
 }: {
   filename: string;
   source: string;
+  /** The event this definition is linked to; enables the identity check. */
+  eventName?: string;
   onChange: (next: string) => void;
 }) {
   const { theme } = useTheme();
+  const editorRef = useRef<EditorInstance | null>(null);
+  const monacoRef = useRef<Monaco | null>(null);
+
+  const problems = useMemo(
+    () => lintDefinitionSource(source, { eventName }),
+    [source, eventName],
+  );
+
+  // Squiggles, live. Re-runs on every keystroke via the memo above.
+  useEffect(() => {
+    const monaco = monacoRef.current;
+    const model = editorRef.current?.getModel();
+    if (!monaco || !model) return;
+    monaco.editor.setModelMarkers(
+      model,
+      MARKER_SOURCE,
+      problems.map((d) => ({
+        severity:
+          d.severity === 'error'
+            ? monaco.MarkerSeverity.Error
+            : monaco.MarkerSeverity.Warning,
+        message: d.message,
+        code: d.code,
+        startLineNumber: d.line,
+        startColumn: d.column,
+        endLineNumber: d.line,
+        endColumn: d.endColumn,
+      })),
+    );
+  }, [problems]);
+
+  useEffect(() => {
+    return () => {
+      const model = editorRef.current?.getModel();
+      if (model) monacoRef.current?.editor.setModelMarkers(model, MARKER_SOURCE, []);
+    };
+  }, []);
+
+  const errors = problems.filter((d) => d.severity === 'error').length;
+  const warnings = problems.filter((d) => d.severity === 'warning').length;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -84,6 +136,12 @@ export function DefinitionEditor({
         </span>
         <span className="font-mono text-[10px] text-secondary">{filename}</span>
         <span className="flex-1" />
+        {errors > 0 && (
+          <span className="font-mono text-[9.4px] text-danger">✕ {errors}</span>
+        )}
+        {warnings > 0 && (
+          <span className="font-mono text-[9.4px] text-warn">⚠ {warnings}</span>
+        )}
         <span className="font-mono text-[9.4px] text-tertiary">
           {source.split('\n').length} lines
         </span>
@@ -96,6 +154,10 @@ export function DefinitionEditor({
           value={source}
           onChange={(v) => onChange(v ?? '')}
           beforeMount={defineThemes}
+          onMount={(editor, monaco) => {
+            editorRef.current = editor;
+            monacoRef.current = monaco;
+          }}
           theme={`pointy-${theme}`}
           options={{
             minimap: { enabled: false },

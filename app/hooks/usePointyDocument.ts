@@ -34,6 +34,7 @@ import {
   setParallel,
   isParallelJoin,
 } from '../lib/pointy';
+import { lintDefinitions } from '../lib/definition/lintDefinition';
 
 /** A wire the user has selected, identified by the pair it joins. */
 export interface WireSelection {
@@ -111,7 +112,9 @@ export function usePointyDocument(initial: PointyDocument) {
 
   const flow = useMemo(() => chainToFlow(doc), [doc]);
   const source = useMemo(() => emit(doc), [doc]);
-  const diagnostics = useMemo(() => lint(doc), [doc]);
+  // Structural Pointy problems and Python contract problems are one list —
+  // the problems panel, the top-bar gate and the publish check all see both.
+  const diagnostics = useMemo(() => [...lint(doc), ...lintDefinitions(doc)], [doc]);
 
   const selectedEvent = useMemo<EventRef | null>(() => {
     if (!selectedEventId) return null;
