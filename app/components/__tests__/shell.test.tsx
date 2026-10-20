@@ -57,6 +57,27 @@ afterEach(() => {
   push.mockClear();
 });
 
+/**
+ * A local event with no definitionId: lint's missing-definition is the one
+ * diagnostic in the app that ships a fix, and its label is the button that
+ * both clears the warning and selects the event (attachDefinition returns a
+ * focusId), which is how any test reaches the event inspector — the canvas
+ * cannot select in jsdom.
+ */
+const bare: PointyDocument = {
+  name: 'bare',
+  directives: {},
+  variables: [],
+  sources: [],
+  staged: [],
+  definitions: {},
+  layout: {},
+  chain: {
+    kind: 'event',
+    ref: { id: 'e1', name: 'LocalTask', namespace: 'local', attributes: [] },
+  },
+};
+
 describe('AppShell', () => {
   it('mounts without throwing', () => {
     expect(() => mount()).not.toThrow();
@@ -121,22 +142,6 @@ describe('AppShell', () => {
  * stub, land in the tab that holds it.
  */
 describe('Add event definition — the fix actually runs', () => {
-  // A local event with no definitionId: lint's missing-definition is the one
-  // diagnostic in the app that ships a fix, and its label is the button.
-  const bare: PointyDocument = {
-    name: 'bare',
-    directives: {},
-    variables: [],
-    sources: [],
-    staged: [],
-    definitions: {},
-    layout: {},
-    chain: {
-      kind: 'event',
-      ref: { id: 'e1', name: 'LocalTask', namespace: 'local', attributes: [] },
-    },
-  };
-
   it('pressing the problems-list fix links a stub and opens the Definition tab', () => {
     mount({ initial: bare });
 
@@ -150,6 +155,81 @@ describe('Add event definition — the fix actually runs', () => {
 
     // The warning that offered the fix is gone; the file now has a definition.
     expect(screen.queryByRole('button', { name: 'Add event definition →' })).toBeNull();
+  });
+});
+
+/**
+ * The inspector's sections open and close with the pointer (CollapsibleSection).
+ * Reach the inspector the same way the fix test does — press the definition
+ * fix, which selects the event — then work the disclosure controls.
+ */
+describe('Collapsible inspector sections', () => {
+  /** The fix already opened the Definition tab; back to where the sections are. */
+  function selectEventAndOpenProperties() {
+    mount({ initial: bare });
+    fireEvent.click(screen.getByRole('button', { name: 'Add event definition →' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Properties' }));
+  }
+
+  /** aria-controls is the contract between toggle and content — read it back. */
+  function contentOf(toggle: HTMLElement) {
+    return document.getElementById(toggle.getAttribute('aria-controls')!) as HTMLElement;
+  }
+
+  it('hides and restores IDENTITY, and the choice survives tab switches', () => {
+    selectEventAndOpenProperties();
+    const toggle = screen.getByRole('button', { name: 'IDENTITY' });
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(contentOf(toggle).hidden).toBe(false);
+
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(contentOf(toggle).hidden).toBe(true);
+
+    // Collapsing is a layout preference, not a reset: it holds across tabs.
+    // /^Definition/ — the tab carries a "py" badge, and the EVENT DEFINITION
+    // toggle on the Properties page also contains "Definition".
+    fireEvent.click(screen.getByRole('button', { name: /^Definition/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Properties' }));
+    expect(screen.getByRole('button', { name: 'IDENTITY' }).getAttribute('aria-expanded')).toBe(
+      'false',
+    );
+  });
+
+  it('EVENT DEFINITION previews the source and both affordances open the editor', () => {
+    selectEventAndOpenProperties();
+
+    // Figma 14:46/14:54 — the card and the linked-file status live here now.
+    expect(screen.getByText('definition linked · local_task.py')).toBeDefined();
+
+    // The labelled affordance in the header…
+    fireEvent.click(screen.getByRole('button', { name: 'Open editor →' }));
+    expect(screen.getByRole('button', { name: 'SOURCE FILE' })).toBeDefined();
+
+    // …and the obvious large target: the preview card itself.
+    fireEvent.click(screen.getByRole('button', { name: 'Properties' }));
+    fireEvent.click(screen.getByText('local_task.py').closest('button')!);
+    expect(screen.queryByText('DIRECTIVES')).toBeNull();
+    expect(screen.getByRole('button', { name: 'SOURCE FILE' })).toBeDefined();
+  });
+
+  it('collapsing SOURCE FILE hides the editor but keeps the status row', () => {
+    // The fix left us on the Definition tab, editor open.
+    mount({ initial: bare });
+    fireEvent.click(screen.getByRole('button', { name: 'Add event definition →' }));
+
+    const toggle = screen.getByRole('button', { name: 'SOURCE FILE' });
+    fireEvent.click(toggle);
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(contentOf(toggle).hidden).toBe(true);
+    // The editor is hidden, not unmounted — its cursor and scroll survive.
+    // `.hidden` reads only an element's own attribute, so prove the editor is
+    // *inside* the collapsed region (whose hidden-ness was asserted above).
+    expect(contentOf(toggle).contains(screen.getByText('local_task.py'))).toBe(true);
+    // And the file is still reported as linked.
+    expect(screen.getByText('definition linked · local_task.py').hidden).toBe(false);
   });
 });
 

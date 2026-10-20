@@ -5,7 +5,7 @@ import type { PointyDocumentStore } from '../../hooks/usePointyDocument';
 import type { Attr, Namespace, RegistrySource } from '../../types/pointy';
 import { emitExpr } from '../../lib/pointy/emit';
 import { cn } from '../../lib/cn';
-import { Button, Callout, Chip, Field, SectionHeader } from '../ui';
+import { Button, Callout, Chip, CollapsibleSection, Field, SectionHeader } from '../ui';
 import { DefinitionEditor } from '../editor/DefinitionEditor';
 import { ConnectionInspector } from './ConnectionInspector';
 import { ExpressionEditor } from './ExpressionEditor';
@@ -18,6 +18,9 @@ import { usePathname } from 'next/navigation';
 
 type Tab = 'properties' | 'definition';
 
+/** The sections of the event inspector that open and close with the pointer. */
+type SectionId = 'identity' | 'execution' | 'attributes' | 'meta' | 'eventDefinition' | 'sourceFile';
+
 /**
  * The inspector — Figma screens 03 (Properties) and 04 (Definition).
  *
@@ -28,6 +31,22 @@ type Tab = 'properties' | 'definition';
 export function Inspector({ store }: { store: PointyDocumentStore }) {
   const [tab, setTab] = useState<Tab>('properties');
   const { doc, selectedEvent, selectedWire, patchEvent, diagnostics, setDefinitionSource } = store;
+
+  /**
+   * Which sections are open. Owned here rather than inside each section so the
+   * layout preference survives switching events and tabs — collapsing IDENTITY
+   * once should not reopen it every time another node is selected.
+   */
+  const [sections, setSections] = useState<Record<SectionId, boolean>>({
+    identity: true,
+    execution: true,
+    attributes: true,
+    meta: true,
+    eventDefinition: true,
+    sourceFile: true,
+  });
+  const setSection = (id: SectionId, open: boolean) =>
+    setSections((prev) => ({ ...prev, [id]: open }));
 
   // "Add event definition" lands the user in the tab that now holds the stub.
   // Without this the callout disappears and nothing visible happens. Anchored
@@ -95,35 +114,57 @@ export function Inspector({ store }: { store: PointyDocumentStore }) {
             </Callout>
           ))}
 
-          <SectionHeader>IDENTITY</SectionHeader>
-          <Field
-            label="Event name"
-            value={ref.name}
-            onValueChange={(name) => patchEvent(ref.id, { name })}
-            hint="Must be a valid Python identifier"
-          />
-          <Field label="Registry source" kind="select" value={ref.namespace as Namespace} />
-          {ref.version && <Field label="Version" kind="select" value={`v${ref.version}`} />}
+          {/* Diagnostics stay outside the collapsibles: a problem the user can
+              hide is a problem they will never fix. */}
 
-          <SectionHeader>EXECUTION</SectionHeader>
-          <Field
-            label="Retry attempts"
-            kind="stepper"
-            value={typeof ref.retry === 'number' ? ref.retry : 0}
-            min={0}
-            onValueChange={(v) => {
-              const n = Number(v);
-              patchEvent(ref.id, { retry: n === 0 ? undefined : n });
-            }}
-            state={typeof ref.retry === 'number' && ref.retry < 2 ? 'error' : 'default'}
-            hint="off · min 2 when set"
-          />
+          <CollapsibleSection
+            title="IDENTITY"
+            open={sections.identity}
+            onOpenChange={(open) => setSection('identity', open)}
+          >
+            <Field
+              label="Event name"
+              value={ref.name}
+              onValueChange={(name) => patchEvent(ref.id, { name })}
+              hint="Must be a valid Python identifier"
+            />
+            <Field label="Registry source" kind="select" value={ref.namespace as Namespace} />
+            {ref.version && <Field label="Version" kind="select" value={`v${ref.version}`} />}
+          </CollapsibleSection>
 
-          <AttributeSection store={store} eventId={ref.id} attributes={ref.attributes} />
+          <CollapsibleSection
+            title="EXECUTION"
+            open={sections.execution}
+            onOpenChange={(open) => setSection('execution', open)}
+          >
+            <Field
+              label="Retry attempts"
+              kind="stepper"
+              value={typeof ref.retry === 'number' ? ref.retry : 0}
+              min={0}
+              onValueChange={(v) => {
+                const n = Number(v);
+                patchEvent(ref.id, { retry: n === 0 ? undefined : n });
+              }}
+              state={typeof ref.retry === 'number' && ref.retry < 2 ? 'error' : 'default'}
+              hint="off · min 2 when set"
+            />
+          </CollapsibleSection>
+
+          <AttributeSection
+            store={store}
+            eventId={ref.id}
+            attributes={ref.attributes}
+            open={sections.attributes}
+            onOpenChange={(open) => setSection('attributes', open)}
+          />
 
           {ref.meta && ref.meta.metaAttributes.length > 0 && (
-            <>
-              <SectionHeader>META-LEVEL ATTRIBUTES</SectionHeader>
+            <CollapsibleSection
+              title="META-LEVEL ATTRIBUTES"
+              open={sections.meta}
+              onOpenChange={(open) => setSection('meta', open)}
+            >
               <div className="flex flex-col gap-1.5">
                 {ref.meta.metaAttributes.map((a) => (
                   <div
@@ -142,18 +183,48 @@ export function Inspector({ store }: { store: PointyDocumentStore }) {
                 Meta-level attributes configure the wrapper. Template-level ones above are
                 inherited by every instance the mode creates.
               </p>
-            </>
+            </CollapsibleSection>
           )}
+
+          <EventDefinitionSection
+            eventName={ref.name}
+            namespace={ref.namespace}
+            definition={definition}
+            open={sections.eventDefinition}
+            onOpenChange={(open) => setSection('eventDefinition', open)}
+            onAdd={() => store.addDefinition(ref.id)}
+            onOpenEditor={() => setTab('definition')}
+          />
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col px-[14px] py-3">
           {definition ? (
-            <DefinitionEditor
-              filename={definition.filename}
-              source={definition.source}
-              eventName={ref.name}
-              onChange={(next) => setDefinitionSource(definition.filename, next)}
-            />
+            <>
+              <CollapsibleSection
+                title="SOURCE FILE"
+                open={sections.sourceFile}
+                onOpenChange={(open) => setSection('sourceFile', open)}
+                // The editor fills the panel only while open; collapsed, the
+                // wrapper shrinks so the status row below follows the header.
+                className={sections.sourceFile ? 'min-h-0 flex-1' : undefined}
+                contentClassName="min-h-0 flex-1"
+              >
+                <DefinitionEditor
+                  filename={definition.filename}
+                  source={definition.source}
+                  eventName={ref.name}
+                  onChange={(next) => setDefinitionSource(definition.filename, next)}
+                />
+              </CollapsibleSection>
+              {/* One span: splitting the filename out would make exact-text
+                  queries match it everywhere the status row appears. */}
+              <p className="mt-4 flex items-center gap-1.5 font-sans text-[9.5px] text-tertiary">
+                <span aria-hidden className="text-ok">
+                  ✓
+                </span>
+                <span>definition linked · {definition.filename}</span>
+              </p>
+            </>
           ) : (
             <Callout
               tone="info"
@@ -183,21 +254,32 @@ function AttributeSection({
   store,
   eventId,
   attributes,
+  open,
+  onOpenChange,
 }: {
   store: PointyDocumentStore;
   eventId: string;
   attributes: Attr[];
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
   const [editing, setEditing] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState('');
 
   return (
-    <>
-      <SectionHeader action="＋ add" onAction={() => setAdding(true)}>
-        ATTRIBUTES
-      </SectionHeader>
-
+    <CollapsibleSection
+      title="ATTRIBUTES"
+      open={open}
+      onOpenChange={onOpenChange}
+      action="＋ add"
+      onAction={() => {
+        // The new-attribute row lives inside the section — add it if the
+        // section was collapsed, or the press would look dead too.
+        if (!open) onOpenChange(true);
+        setAdding(true);
+      }}
+    >
       <div className="flex flex-col gap-1.5">
         {attributes.map((a) =>
           editing === a.name ? (
@@ -278,7 +360,90 @@ function AttributeSection({
           </div>
         )}
       </div>
-    </>
+    </CollapsibleSection>
+  );
+}
+
+/**
+ * EVENT DEFINITION — Figma screen 03's Sec/EVENT DEFINITION (14:42), its
+ * DefinitionCard (14:46) and status row (14:54): the Python behind this event,
+ * summarised where the event is described, with a path through to the full
+ * editor. Previewing the source should not force a trip to another tab; hiding
+ * the preview should not lose it — hence the collapsible.
+ *
+ * The card and the header action both open the editor: the action is the
+ * labelled affordance, the card is the obvious large target.
+ */
+function EventDefinitionSection({
+  eventName,
+  namespace,
+  definition,
+  open,
+  onOpenChange,
+  onAdd,
+  onOpenEditor,
+}: {
+  eventName: string;
+  namespace: Namespace;
+  definition?: { filename: string; source: string };
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onAdd: () => void;
+  onOpenEditor: () => void;
+}) {
+  const registry = namespace !== 'local';
+  // Registry Python lives with its package — there is nothing to add or open.
+  const action = definition ? 'Open editor →' : registry ? undefined : 'Add event definition →';
+
+  return (
+    <CollapsibleSection
+      title="EVENT DEFINITION"
+      open={open}
+      onOpenChange={onOpenChange}
+      action={action}
+      onAction={definition ? onOpenEditor : onAdd}
+    >
+      {definition ? (
+        <>
+          <button
+            type="button"
+            onClick={onOpenEditor}
+            className={cn(
+              'w-full cursor-pointer overflow-hidden rounded-[6px] border border-edge',
+              'bg-bg-sunken text-left hover:border-edge-strong',
+              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-seq',
+            )}
+          >
+            <span className="flex items-center gap-2 border-b border-edge-subtle px-3 py-2">
+              <span className="inline-flex items-center rounded-[3px] bg-keyword-tint px-[5px] py-[2px] font-mono text-[8.6px] font-medium text-keyword">
+                {'{}'}
+              </span>
+              <span className="font-mono text-[10px] text-secondary">{definition.filename}</span>
+              <span className="flex-1" />
+              <span className="font-mono text-[9.4px] text-tertiary">
+                {definition.source.split('\n').length} lines
+              </span>
+            </span>
+            <span className="block max-h-[150px] overflow-auto whitespace-pre px-3 py-2 font-mono text-[10px] leading-[16px] text-code">
+              {definition.source}
+            </span>
+          </button>
+          {/* One span — see the same note on the Definition tab's status row. */}
+          <p className="flex items-center gap-1.5 font-sans text-[9.5px] text-tertiary">
+            <span aria-hidden className="text-ok">
+              ✓
+            </span>
+            <span>definition linked · {definition.filename}</span>
+          </p>
+        </>
+      ) : (
+        <p className="font-sans text-[10.5px] leading-[17px] text-secondary">
+          {registry
+            ? `${namespace}::${eventName} is resolved from the registry, so its Python lives with the package.`
+            : 'A local event needs a class deriving from EventBase before the pipeline can run.'}
+        </p>
+      )}
+    </CollapsibleSection>
   );
 }
 

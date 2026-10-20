@@ -404,6 +404,38 @@ Node ids (3:2) open in Figma via ?node-id=3-2
       Full gate green: tsc / 310 tests / eslint / build.
 
 
+== INSPECTOR — expand/collapse + the EVENT DEFINITION section Figma had ==  DONE 2026-10-20
+
+  "I should be able to expand the event details / definition section by using
+  the mouse pointer." The panel's sections were static headers; they now open
+  and close, and the Python behind an event is finally summarised where the
+  event is described (Figma screen 03 had it — Sec/EVENT DEFINITION 14:42,
+  DefinitionCard 14:46, status row 14:54 — and it was never built).
+
+[x] app/components/ui/CollapsibleSection.tsx — the primitive. The label is a
+      button carrying aria-expanded/aria-controls; the trailing action (＋ add,
+      Open editor →) is a SIBLING of it (nested buttons are illegal, and the
+      action must not toggle the section it acts on). Children stay mounted
+      while collapsed — the `hidden` attribute with no display class to beat
+      it — so collapsing the editor keeps its cursor and a half-typed form.
+      Controlled (Inspector owns the state) with an uncontrolled fallback.
+[x] Inspector: open-state lives in the panel, not the sections, so the choice
+      survives switching events and tabs. IDENTITY / EXECUTION / ATTRIBUTES /
+      META-LEVEL ATTRIBUTES collapsed on the pointer; ＋ add expands the
+      ATTRIBUTES section if it was closed. Diagnostic callouts stay outside
+      the collapsibles — a problem you can hide is a problem you never fix.
+[x] Properties tab: EVENT DEFINITION section — preview card ({} chip,
+      filename, line count, scrollable source) and status row, both paths
+      (card, "Open editor →") open the Definition tab; for a local event with
+      no definition yet the action is "Add event definition →".
+[x] Definition tab: SOURCE FILE collapsed around the editor (fills the panel
+      only while open) + the status row below it, so the editor can be tucked
+      away without leaving the file's identity behind.
+[x] 8 tests (5 primitive, 3 integration through the fix-driven selection
+      path — the canvas cannot select in jsdom). 319 green.
+      Full gate green: tsc / 319 tests / eslint / build.
+
+
 == UNDESIGNED — needs design before planning ==                              §11
 
 [ ] Browsing EventHub: results, component detail, versions, install
