@@ -250,6 +250,7 @@ export function AppShell({
               source={store.source}
               diagnostics={store.diagnostics}
               onDownload={exportFile}
+              onFix={store.applyFix}
               runView={run.view}
               runNotice={run.notice}
               onRunEvent={dispatchRun}

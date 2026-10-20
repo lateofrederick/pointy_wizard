@@ -30,6 +30,7 @@ export function OutputPanel({
   source,
   diagnostics,
   onDownload,
+  onFix,
   runView = 'source',
   runNotice = null,
   onRunEvent,
@@ -38,6 +39,8 @@ export function OutputPanel({
   source: string;
   diagnostics: Diagnostic[];
   onDownload?: () => void;
+  /** Runs the single fix a diagnostic promises. */
+  onFix?: (d: Diagnostic) => void;
   /** Which pair of header/body is showing: the source, or screen 12's run view. */
   runView?: RunView;
   /** Why the last Full logs / Re-run press did nothing — see lib/runView.ts. */
@@ -161,6 +164,7 @@ export function OutputPanel({
                       {d.fix && (
                         <button
                           type="button"
+                          onClick={() => onFix?.(d)}
                           className="mt-1 cursor-pointer font-sans text-[9.5px] font-medium text-seq hover:underline"
                         >
                           {d.fix.label}

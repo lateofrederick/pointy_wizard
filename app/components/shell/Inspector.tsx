@@ -29,6 +29,17 @@ export function Inspector({ store }: { store: PointyDocumentStore }) {
   const [tab, setTab] = useState<Tab>('properties');
   const { doc, selectedEvent, selectedWire, patchEvent, diagnostics, setDefinitionSource } = store;
 
+  // "Add event definition" lands the user in the tab that now holds the stub.
+  // Without this the callout disappears and nothing visible happens. Anchored
+  // on the boolean so editing the source does not yank the tab back. Must sit
+  // above the early returns — hooks run unconditionally.
+  const hasDefinition = !!(
+    selectedEvent?.definitionId && doc.definitions[selectedEvent.definitionId]
+  );
+  useEffect(() => {
+    if (hasDefinition) setTab('definition');
+  }, [hasDefinition]);
+
   // A selected wire takes over the panel entirely — Figma screen 07.
   if (selectedWire) return <ConnectionInspector store={store} />;
   if (!selectedEvent) return <PipelineInspector store={store} />;
@@ -78,6 +89,7 @@ export function Inspector({ store }: { store: PointyDocumentStore }) {
               tone={d.severity === 'error' ? 'error' : 'warning'}
               title={d.message}
               action={d.fix?.label}
+              onAction={d.fix ? () => store.applyFix(d) : undefined}
             >
               {d.rule}
             </Callout>
@@ -143,7 +155,14 @@ export function Inspector({ store }: { store: PointyDocumentStore }) {
               onChange={(next) => setDefinitionSource(definition.filename, next)}
             />
           ) : (
-            <Callout tone="info" title="No definition linked" action="Add event definition →">
+            <Callout
+              tone="info"
+              title="No definition linked"
+              action={ref.namespace === 'local' ? 'Add event definition →' : undefined}
+              onAction={
+                ref.namespace === 'local' ? () => store.addDefinition(ref.id) : undefined
+              }
+            >
               {ref.namespace === 'local'
                 ? 'A local event needs a class deriving from EventBase before the pipeline can run.'
                 : `${ref.namespace}::${ref.name} is resolved from the registry, so its Python lives with the package.`}

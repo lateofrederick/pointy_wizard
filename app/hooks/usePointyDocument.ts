@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import type { EventRef, Expr, PointyDocument, RegistrySource } from '../types/pointy';
 import type { StructuralResult } from '../lib/pointy';
+import type { Diagnostic } from '../lib/pointy/lint';
 import {
   chainToFlow,
   connect as connectOp,
@@ -354,6 +355,33 @@ export function usePointyDocument(initial: PointyDocument) {
     });
   }, [setDoc]);
 
+  /**
+   * Run the single fix a diagnostic promises. A callout or problems-list row
+   * that offers "Add event definition →" and does nothing when pressed is
+   * worse than no action at all, so every fix.label ships with the handler
+   * that performs it here — one place to keep the two in step.
+   */
+  const applyFix = useCallback(
+    (d: Diagnostic) => {
+      switch (d.fix?.action) {
+        case 'open-definition':
+          if (d.target.kind === 'event') addDefinition(d.target.eventId);
+          break;
+        case 'open-sources':
+          // The sources editor lives on the pipeline inspector — no selection.
+          selectEvent(null);
+          break;
+        case 'set-mode-cfg':
+          setMode('CFG');
+          break;
+        case 'remove-recursive-depth':
+          setDoc((doc) => ({ ...doc, directives: { ...doc.directives, recursiveDepth: undefined } }));
+          break;
+      }
+    },
+    [addDefinition, selectEvent, setMode, setDoc],
+  );
+
   return {
     doc,
     setDoc,
@@ -395,6 +423,7 @@ export function usePointyDocument(initial: PointyDocument) {
     deleteSource,
     setMode,
     setDefinitionSource,
+    applyFix,
   };
 }
 

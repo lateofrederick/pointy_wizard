@@ -114,6 +114,46 @@ describe('AppShell', () => {
 });
 
 /**
+ * "Add event definition →" was a dead button in three places (the problems
+ * list, the inspector's missing-definition callout, and the definition tab's
+ * empty state) — the label promised an action and no handler was attached.
+ * These assert the promise is now kept, end to end: press the fix, get the
+ * stub, land in the tab that holds it.
+ */
+describe('Add event definition — the fix actually runs', () => {
+  // A local event with no definitionId: lint's missing-definition is the one
+  // diagnostic in the app that ships a fix, and its label is the button.
+  const bare: PointyDocument = {
+    name: 'bare',
+    directives: {},
+    variables: [],
+    sources: [],
+    staged: [],
+    definitions: {},
+    layout: {},
+    chain: {
+      kind: 'event',
+      ref: { id: 'e1', name: 'LocalTask', namespace: 'local', attributes: [] },
+    },
+  };
+
+  it('pressing the problems-list fix links a stub and opens the Definition tab', () => {
+    mount({ initial: bare });
+
+    const fix = screen.getByRole('button', { name: 'Add event definition →' });
+    fireEvent.click(fix);
+
+    // The stub is linked: the filename shows in the Definition tab's header,
+    // and the tab itself is selected — not the Properties tab it started on.
+    expect(screen.getByText('local_task.py')).toBeDefined();
+    expect(screen.queryByText('DIRECTIVES')).toBeNull();
+
+    // The warning that offered the fix is gone; the file now has a definition.
+    expect(screen.queryByRole('button', { name: 'Add event definition →' })).toBeNull();
+  });
+});
+
+/**
  * Screen 12, built as an inert shell by product decision: there is no runner
  * service, so the run view may show the *absence* of a run and never an
  * invented one — no run number, no timings, no log lines (todo.txt, "WHY 11
