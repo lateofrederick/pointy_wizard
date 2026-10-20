@@ -28,6 +28,9 @@ export interface BranchNodeData {
   state: NodeState;
   rows: BranchRow[];
   accent?: string;
+  /** Adds a path on the next free descriptor. */
+  onAddBranch?: () => void;
+  onMenu?: (clientX: number, clientY: number) => void;
 }
 
 const BRANCH_WIDTH = 220;
@@ -52,10 +55,7 @@ function BranchNodeImpl({ data, selected }: NodeProps<BranchNodeData>) {
   return (
     <div
       style={{ width: BRANCH_WIDTH }}
-      className={cn(
-        'relative rounded-[9px] border bg-bg-raised shadow-raised',
-        SHELL_STATE[state],
-      )}
+      className={cn('relative rounded-[9px] border bg-bg-raised', SHELL_STATE[state])}
     >
       <AccentBar tone={data.accent ?? 'bg-keyword'} />
 
@@ -72,7 +72,11 @@ function BranchNodeImpl({ data, selected }: NodeProps<BranchNodeData>) {
           <button
             type="button"
             aria-label={`${ref.name} actions`}
-            className="cursor-pointer px-0.5 font-sans text-[11px] leading-none text-tertiary hover:text-primary"
+            className="nodrag cursor-pointer px-0.5 font-sans text-[11px] leading-none text-tertiary hover:text-primary"
+            onClick={(e) => {
+              e.stopPropagation();
+              data.onMenu?.(e.clientX, e.clientY);
+            }}
           >
             ⋮
           </button>
@@ -103,7 +107,18 @@ function BranchNodeImpl({ data, selected }: NodeProps<BranchNodeData>) {
 
           <button
             type="button"
-            className="flex cursor-pointer items-center gap-1.5 rounded-[4px] px-[7px] py-1.5 text-left hover:bg-neutral-tint"
+            aria-label={`Add a branch path to ${ref.name}`}
+            disabled={rows.length >= 10}
+            onClick={(e) => {
+              e.stopPropagation();
+              data.onAddBranch?.();
+            }}
+            className={cn(
+              'nodrag flex items-center gap-1.5 rounded-[4px] px-[7px] py-1.5 text-left',
+              rows.length >= 10
+                ? 'cursor-not-allowed opacity-50'
+                : 'cursor-pointer hover:bg-neutral-tint',
+            )}
           >
             <span aria-hidden className="font-sans text-[9px] text-tertiary">
               ＋

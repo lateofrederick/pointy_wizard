@@ -1,6 +1,8 @@
 import { notFound, redirect } from 'next/navigation';
 import { currentUser } from '../../lib/server/auth';
 import { loadPipeline } from '../../lib/server/pipelines';
+import { SessionProvider } from '../../lib/session';
+import { signInHref } from '../../lib/routes';
 import { AppShell } from '../../components/shell/AppShell';
 
 export default async function EditorPage({
@@ -8,10 +10,13 @@ export default async function EditorPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const user = await currentUser();
-  if (!user) redirect('/signin');
-
   const { id } = await params;
+
+  // A saved pipeline belongs to someone, so this route does need an account —
+  // unlike `/`, which does not. Come back here after signing in.
+  const user = await currentUser();
+  if (!user) redirect(signInHref(`/pipelines/${id}`));
+
   const result = await loadPipeline(user.id, id);
 
   if (!result.ok && result.reason === 'not-found') notFound();
@@ -38,6 +43,8 @@ export default async function EditorPage({
   }
 
   return (
-    <AppShell initial={result.document} pipelineId={result.id} savedAt={result.updatedAt} />
+    <SessionProvider user={user}>
+      <AppShell initial={result.document} pipelineId={result.id} savedAt={result.updatedAt} />
+    </SessionProvider>
   );
 }

@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   connect,
+  disconnect,
   discardStaged,
   hasSuccessor,
+  isParallelJoin,
   newEventId,
   removeAttribute,
   removeEvent,
   setAttribute,
+  setParallel,
   setRetry,
   stageEvent,
   updateStaged,
@@ -14,6 +17,7 @@ import {
 import { emit } from '../emit';
 import { chainToFlow } from '../flow';
 import { lint } from '../lint';
+import { parse } from '../parse';
 import { events } from '../walk';
 import type { Chain, EventRef, PointyDocument } from '../../../types/pointy';
 import { emptyDocument } from '../../../types/pointy';
@@ -273,5 +277,202 @@ describe('newEventId', () => {
   it('does not collide', () => {
     const ids = new Set(Array.from({ length: 500 }, () => newEventId()));
     expect(ids.size).toBe(500);
+  });
+});
+
+/** `Route(0 -> B, 1 -> C)` */
+function branchDoc(): PointyDocument {
+  return {
+    ...emptyDocument('t'),
+    chain: {
+      kind: 'branch',
+      on: ref('rd', 'Route'),
+      paths: [
+        { descriptor: 0, label: 'success', body: e(ref('b', 'B')) },
+        { descriptor: 1, label: 'failure', body: e(ref('c', 'C')) },
+      ],
+    },
+  };
+}
+
+describe('disconnect — the wire popover deletes a connection', () => {
+  it('cuts the join and returns the tail to staging, not to the void', () => {
+    const before = { ...line(), layout: { c: { x: 5, y: 7 } } };
+    const { doc, refused } = disconnect(before, 'b', 'c');
+
+    expect(refused).toBeUndefined();
+    expect(names(doc)).toEqual(['A', 'B']);
+    expect(wires(doc)).toEqual(['a-seq->b']);
+    expect(doc.staged.map((s) => s.id)).toEqual(['c']);
+    expect(doc.layout.c).toEqual({ x: 5, y: 7 }); // stays where it was drawn
+    expect(emit(doc)).not.toContain('C');
+  });
+
+  it('warns the returned event will not run — the staged rule', () => {
+    const { doc } = disconnect(line(), 'b', 'c');
+    expect(lint(doc).some((d) => d.code === 'unconnected-event')).toBe(true);
+  });
+
+  it('cuts a mid-chain join and the events either side meet around it', () => {
+    const { doc } = disconnect(line(), 'a', 'b');
+    expect(names(doc)).toEqual(['A', 'C']);
+    expect(wires(doc)).toEqual(['a-seq->c']);
+    expect(doc.staged.map((s) => s.id)).toEqual(['b']);
+  });
+
+  it('keeps the parent join’s operator when the cut child was a pipe', () => {
+    const before: PointyDocument = {
+      ...line(),
+      chain: {
+        kind: 'seq',
+        left: { kind: 'pipe', left: e(ref('a', 'A')), right: e(ref('b', 'B')) },
+        right: e(ref('c', 'C')),
+      },
+    };
+    const { doc, refused } = disconnect(before, 'a', 'b');
+    expect(refused).toBeUndefined();
+    expect(wires(doc)).toEqual(['a-seq->c']);
+    expect(doc.staged.map((s) => s.id)).toEqual(['b']);
+  });
+
+  it('deletes a branch path and leaves the other descriptor intact', () => {
+    const { doc, refused } = disconnect(branchDoc(), 'rd', 'c');
+    expect(refused).toBeUndefined();
+    expect(doc.staged.map((s) => s.id)).toEqual(['c']);
+    expect(wires(doc)).toEqual(['rd-branch->b']);
+    expect(chainToFlow(doc).edges[0].descriptor).toBe(0);
+  });
+
+  it('a branch left on one path warns rather than pretending it still branches', () => {
+    const { doc } = disconnect(branchDoc(), 'rd', 'c');
+    expect(lint(doc).some((d) => d.code === 'single-path-branch')).toBe(true);
+  });
+
+  it('takes the branch with it when its last path goes', () => {
+    const once = disconnect(branchDoc(), 'rd', 'c').doc;
+    const { doc } = disconnect(once, 'rd', 'b');
+    expect(doc.chain).toEqual({ kind: 'event', ref: ref('rd', 'Route') });
+    expect(doc.staged.map((s) => s.id).sort()).toEqual(['b', 'c']);
+    expect(wires(doc)).toEqual([]);
+  });
+
+  it('refuses one strand of a fan-out, with the rule', () => {
+    const before: PointyDocument = {
+      ...emptyDocument('t'),
+      chain: {
+        kind: 'seq',
+        left: e(ref('a', 'A')),
+        right: { kind: 'group', members: [e(ref('c', 'C')), e(ref('d', 'D'))], attributes: [] },
+      },
+    };
+    expect(chainToFlow(before).edges).toHaveLength(2); // A→C and A→D, one join
+
+    const result = disconnect(before, 'a', 'c');
+    expect(result.refused).toMatch(/cannot be deleted on its own/);
+    expect(result.doc).toBe(before);
+  });
+
+  it('refuses a || wire — the wire is the pair', () => {
+    const before: PointyDocument = {
+      ...emptyDocument('t'),
+      chain: { kind: 'parallel', members: [e(ref('a', 'A')), e(ref('b', 'B'))] },
+    };
+    const result = disconnect(before, 'a', 'b');
+    expect(result.refused).toContain('structural');
+    expect(result.doc).toBe(before);
+  });
+
+  it('refuses a pair that is live but was never joined', () => {
+    const before = line(); // A→B→C: A and C both run, no wire between them
+    const result = disconnect(before, 'a', 'c');
+    expect(result.refused).toMatch(/not in the pipeline/);
+    expect(result.doc).toBe(before);
+  });
+
+  it('refuses on an empty document', () => {
+    expect(disconnect(emptyDocument('t'), 'a', 'b').refused).toBe('Nothing to disconnect.');
+  });
+});
+
+/** A || B || C */
+function triple(): PointyDocument {
+  return {
+    ...emptyDocument('t'),
+    chain: {
+      kind: 'parallel',
+      members: [e(ref('a', 'A')), e(ref('b', 'B')), e(ref('c', 'C'))],
+    },
+  };
+}
+
+describe('setParallel — the wire popover Parallel row, both directions', () => {
+  it('rewrites an A -> B join into an A || B pair', () => {
+    const result = setParallel(line(), 'a', 'b', 'parallel');
+    expect(result.refused).toBeUndefined();
+    // The rest of the spine stays sequential; only the clicked join flips.
+    expect(wires(result.doc)).toEqual(['a-parallel->b', 'b-seq->c']);
+    expect(emit(result.doc)).toContain('A || B');
+  });
+
+  it('takes a pair back out to sequential', () => {
+    const pair: PointyDocument = {
+      ...emptyDocument('t'),
+      chain: { kind: 'parallel', members: [e(ref('a', 'A')), e(ref('b', 'B'))] },
+    };
+    const result = setParallel(pair, 'a', 'b', 'seq');
+    expect(result.refused).toBeUndefined();
+    // Top-level sequencing breaks before `->`, so the pair is two lines.
+    expect(emit(result.doc)).toMatch(/A\n {2}-> B/);
+    expect(wires(result.doc)).toEqual(['a-seq->b']);
+  });
+
+  it('splices one pair out of a three-way, leaving the rest parallel', () => {
+    const result = setParallel(triple(), 'b', 'c', 'pipe');
+    expect(result.refused).toBeUndefined();
+    // A stays parallel with the combined (B |-> C) unit — non-atomic members
+    // are wrapped in parens, the way the parser needs them back.
+    expect(wires(result.doc)).toEqual(['b-pipe->c', 'a-parallel->b']);
+    expect(emit(result.doc)).toContain('A || (B |-> C)');
+  });
+
+  it('round-trips through the parser when a parallel member is a sequence', () => {
+    // A || B || C, A–B taken out: members [seq(A,B), C] emits `(A -> B) || C`
+    // — the parens the emitter adds are the parens the parser reads back.
+    const result = setParallel(triple(), 'a', 'b', 'seq');
+    const src = emit(result.doc);
+    expect(src).toContain('(A -> B) || C');
+    expect(emit(parse(src))).toBe(src);
+  });
+
+  it('round-trips when a sequence join becomes the head of a pair', () => {
+    const result = setParallel(line(), 'a', 'b', 'parallel');
+    const src = emit(result.doc); // seq(parallel[A,B], C)
+    expect(emit(parse(src))).toBe(src);
+  });
+
+  it('refuses to parallelise a pair with no join, with the rule', () => {
+    const before = line(); // A→B→C: A and C run, no wire between them
+    const result = setParallel(before, 'a', 'c', 'parallel');
+    expect(result.refused).toMatch(/sequential or streaming/);
+    expect(result.doc).toBe(before);
+  });
+
+  it('refuses to take a seq join out of a pair that is not parallel', () => {
+    const before = line();
+    const result = setParallel(before, 'a', 'b', 'seq');
+    expect(result.refused).toMatch(/\|\| pair/);
+    expect(result.doc).toBe(before);
+  });
+
+  it('refuses on an empty document', () => {
+    expect(setParallel(emptyDocument('t'), 'a', 'b', 'parallel').refused).toBe(
+      'Nothing is connected yet.',
+    );
+  });
+
+  it('isParallelJoin routes the hook: true for a pair, false for a wire', () => {
+    expect(isParallelJoin(triple(), 'a', 'b')).toBe(true);
+    expect(isParallelJoin(line(), 'a', 'b')).toBe(false);
+    expect(isParallelJoin(emptyDocument('t'), 'a', 'b')).toBe(false);
   });
 });

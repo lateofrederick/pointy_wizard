@@ -1,13 +1,15 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 import { api, ApiError } from '../../lib/api';
 import { cn } from '../../lib/cn';
 import { MIN_PASSWORD } from '../../lib/constants';
-import { ThemeToggle } from '../ui';
+import { safeNext } from '../../lib/routes';
+
 import { MarketingPanel } from './MarketingPanel';
+import { GitHubMark, GoogleMark } from './ProviderMarks';
 
 /**
  * Sign in / Sign up — Figma screens 01 (`29:533`) and 02 (`29:596`).
@@ -22,6 +24,10 @@ import { MarketingPanel } from './MarketingPanel';
 export function AuthScreen({ mode }: { mode: 'signin' | 'signup' }) {
   const router = useRouter();
   const signingUp = mode === 'signup';
+
+  // Where to go afterwards. Someone who was sent here mid-task goes back to the
+  // task; someone who came here directly lands on their pipelines.
+  const next = safeNext(useSearchParams().get('next')) ?? '/pipelines';
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -40,7 +46,7 @@ export function AuthScreen({ mode }: { mode: 'signin' | 'signup' }) {
       else await api.signIn(email, password);
       // replace, not push: the back button should not return to a form the
       // user has already completed.
-      router.replace('/pipelines');
+      router.replace(next);
       router.refresh();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong.');
@@ -52,14 +58,15 @@ export function AuthScreen({ mode }: { mode: 'signin' | 'signup' }) {
     <div className="flex min-h-screen w-full bg-bg-base">
       <section className="flex w-full shrink-0 flex-col justify-center border-r border-edge-subtle bg-bg-surface px-8 py-16 sm:px-[72px] lg:w-[640px]">
         <div className="mx-auto flex w-full max-w-[496px] flex-col">
-          <div className="flex items-center gap-3">
-            <div className="h-[30px] w-[30px] shrink-0 rounded-lg bg-seq" />
+          {/* No theme toggle here. Theme is a per-account setting and there is
+              no account yet — these two routes follow the OS instead. See
+              SYSTEM_THEME_ROUTES in lib/theme.tsx. */}
+          <Link href="/" className="flex items-center gap-3">
+            <span className="h-[30px] w-[30px] shrink-0 rounded-lg bg-seq" />
             <span className="font-mono text-[15px] font-medium text-primary">
               Pointy Wizard
             </span>
-            <span className="flex-1" />
-            <ThemeToggle />
-          </div>
+          </Link>
 
           <h1 className="mt-11 font-sans text-[30px] leading-[39px] font-medium text-primary">
             {signingUp ? 'Create your account' : 'Sign in'}
@@ -72,11 +79,13 @@ export function AuthScreen({ mode }: { mode: 'signin' | 'signup' }) {
 
           <div className="mt-[30px] flex flex-col gap-2.5">
             <ProviderButton
-              label={`${signingUp ? 'Sign up' : 'Continue'} with GitHub`}
+              provider="github"
+              verb={signingUp ? 'Sign up' : 'Continue'}
               onUnavailable={setNote}
             />
             <ProviderButton
-              label={`${signingUp ? 'Sign up' : 'Continue'} with Google`}
+              provider="google"
+              verb={signingUp ? 'Sign up' : 'Continue'}
               onUnavailable={setNote}
             />
           </div>
@@ -160,7 +169,7 @@ export function AuthScreen({ mode }: { mode: 'signin' | 'signup' }) {
               disabled={busy}
               className={cn(
                 'mt-6 h-[46px] w-full rounded-lg font-sans text-[14px] font-medium',
-                'bg-seq text-bg-sunken transition-[filter] hover:brightness-110',
+                'bg-seq text-bg-sunken transition-colors hover:bg-seq-hover',
                 busy ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
               )}
             >
@@ -175,7 +184,7 @@ export function AuthScreen({ mode }: { mode: 'signin' | 'signup' }) {
           <p className="mt-[22px] flex items-center gap-[7px] font-sans text-[12.5px] text-tertiary">
             {signingUp ? 'Already have an account?' : 'No account yet?'}
             <Link
-              href={signingUp ? '/signin' : '/signup'}
+              href={`${signingUp ? '/signin' : '/signup'}?next=${encodeURIComponent(next)}`}
               className="font-medium text-seq hover:underline"
             >
               {signingUp ? 'Sign in →' : 'Create one →'}
@@ -195,31 +204,39 @@ const inputClass = cn(
   'placeholder:text-disabled focus:border-seq',
 );
 
+const PROVIDERS = {
+  github: { name: 'GitHub', Mark: GitHubMark },
+  google: { name: 'Google', Mark: GoogleMark },
+} as const;
+
 /**
  * The OAuth buttons are drawn in the designs but there is no provider behind
  * them yet. Disabling them silently would look broken, so they say so.
  */
 function ProviderButton({
-  label,
+  provider,
+  verb,
   onUnavailable,
 }: {
-  label: string;
+  provider: keyof typeof PROVIDERS;
+  /** "Continue" on sign-in, "Sign up" on the other screen. */
+  verb: string;
   onUnavailable: (message: string) => void;
 }) {
+  const { name, Mark } = PROVIDERS[provider];
+
   return (
     <button
       type="button"
-      onClick={() => onUnavailable('Single sign-on is not wired up yet — use email and password.')}
+      onClick={() => onUnavailable(`${name} sign-in is not wired up yet — use email and password.`)}
       className={cn(
         'flex h-11 w-full cursor-pointer items-center justify-center gap-2.5 rounded-lg',
         'border border-edge bg-bg-raised font-sans text-[13px] font-medium text-primary',
         'hover:bg-neutral-tint',
       )}
     >
-      <span aria-hidden className="text-[13px]">
-        ●
-      </span>
-      {label}
+      <Mark />
+      {verb} with {name}
     </button>
   );
 }

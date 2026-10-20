@@ -83,7 +83,7 @@ const BADGE: Record<Namespace, { tint: string; text: string; glyph: string }> = 
   github: { tint: 'bg-flow-tint', text: 'text-flow', glyph: '⌥' },
 };
 
-export function Palette() {
+export function Palette({ onNewEvent }: { onNewEvent?: () => void }) {
   const [query, setQuery] = useState('');
 
   const categories = CATEGORIES.map((c) => ({
@@ -163,7 +163,7 @@ export function Palette() {
       </div>
 
       <div className="border-t border-edge p-[14px]">
-        <Button kind="ghost" className="w-full">
+        <Button kind="ghost" className="w-full" onClick={onNewEvent}>
           ＋ New custom event
         </Button>
       </div>

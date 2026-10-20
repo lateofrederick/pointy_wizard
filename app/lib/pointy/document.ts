@@ -51,8 +51,8 @@ export function updateEvent(
  * Change a wire's operator between sequential and streaming.
  *
  * Identified by the pair it joins, because that is what the user clicked. `||`
- * and branch wires are not reachable this way — turning a pair parallel or
- * promoting to a branch restructures the chain and is phase 4.
+ * and branch wires are not reachable this way — turning a pair parallel is a
+ * chain rewrite and lives in edit.ts (`setParallel`).
  */
 export function setWireOperator(
   doc: PointyDocument,

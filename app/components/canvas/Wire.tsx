@@ -1,15 +1,23 @@
 'use client';
 
-import { memo } from 'react';
+import { memo, useLayoutEffect } from 'react';
 import { Position, type EdgeProps } from 'reactflow';
 import type { Descriptor } from '../../types/pointy';
+import { cn } from '../../lib/cn';
 import type { WireOperator } from '../../lib/pointy/flow';
-import { wireGeometry, type Side } from '../../lib/pointy/geometry';
+import { wireGeometry, wireMidpoint, type Point, type Side } from '../../lib/pointy/geometry';
 
 export interface WireData {
   operator: WireOperator;
   descriptor?: Descriptor;
   selected?: boolean;
+  /**
+   * Hands this wire's midpoint (flow coordinates) up while it is selected, so
+   * the popover can anchor to it. The Wire component is the one place that
+   * knows the exact geometry — reactflow computes the handle points and hands
+   * them in here, and Canvas sits above the pane where an overlay can float.
+   */
+  onMidpoint?: (point: Point) => void;
 }
 
 const SIDE: Record<Position, Side> = {
@@ -61,12 +69,37 @@ function WireImpl({
     targetSide: SIDE[targetPosition],
   });
 
+  // The popover opens anchored to this wire's midpoint. A layout effect, so it
+  // never paints one frame at the previous wire's anchor first; it re-fires
+  // while a node drags because the handle points move with it.
+  useLayoutEffect(() => {
+    if (!selected) return;
+    data?.onMidpoint?.(
+      wireMidpoint({
+        source: { x: sourceX, y: sourceY },
+        target: { x: targetX, y: targetY },
+        sourceSide: SIDE[sourcePosition],
+        targetSide: SIDE[targetPosition],
+      }),
+    );
+  }, [
+    selected,
+    sourceX,
+    sourceY,
+    targetX,
+    targetY,
+    sourcePosition,
+    targetPosition,
+    data,
+  ]);
+
   const width = selected ? 2.5 : 2;
 
   return (
     <g
-      className="pointy-wire"
-      style={selected ? { filter: `drop-shadow(0 0 6px ${stroke})` } : undefined}
+      className={cn('pointy-wire', selected && 'pointy-wire--selected')}
+      // globals.css turns the class into a drop-shadow, dark theme only.
+      style={{ '--wire-stroke': stroke } as React.CSSProperties}
     >
       {/* Invisible fat stroke so the wire is clickable — selecting the wire is
           how the operator gets changed now that the chips are gone. */}

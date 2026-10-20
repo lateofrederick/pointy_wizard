@@ -6,7 +6,7 @@ import type {
   Expr,
   PointyDocument,
 } from '../../types/pointy';
-import { events, mapEvents } from './walk';
+import { entries, events, exits, mapEvents } from './walk';
 
 /**
  * Chain surgery — the authoring operations.
@@ -98,16 +98,25 @@ export function hasSuccessor(chain: Chain | null, id: string): boolean {
 /* -------------------------------------------------------------------- staging */
 
 /** Drop an event on the canvas without connecting it (screen 06). */
+/**
+ * Put an event on the canvas.
+ *
+ * THE FIRST EVENT BECOMES THE CHAIN. A single event is a valid Pointy program,
+ * and staging it instead would be a dead end: `connect` can only extend from
+ * something already in the chain, so an empty document with only staged events
+ * could never become a program at all. Everything after the first is staged
+ * until a wire reaches it.
+ */
 export function stageEvent(
   doc: PointyDocument,
   ref: EventRef,
   position: { x: number; y: number },
 ): PointyDocument {
-  return {
-    ...doc,
-    staged: [...doc.staged, ref],
-    layout: { ...doc.layout, [ref.id]: position },
-  };
+  const layout = { ...doc.layout, [ref.id]: position };
+
+  if (!doc.chain) return { ...doc, chain: { kind: 'event', ref }, layout };
+
+  return { ...doc, staged: [...doc.staged, ref], layout };
 }
 
 export function updateStaged(
@@ -153,9 +162,30 @@ export function connect(
   targetId: string,
   operator: 'seq' | 'pipe' = 'seq',
 ): ConnectResult {
-  if (!doc.chain) return { doc, outcome: 'rejected', reason: 'The chain is empty.' };
   if (sourceId === targetId) {
     return { doc, outcome: 'rejected', reason: 'An event cannot connect to itself.' };
+  }
+
+  // An empty document with two staged events is seeded by the first wire drawn
+  // between them. Without this the document can never acquire a chain.
+  if (!doc.chain) {
+    const from = doc.staged.find((s) => s.id === sourceId);
+    const to = doc.staged.find((s) => s.id === targetId);
+    if (!from || !to) {
+      return { doc, outcome: 'rejected', reason: 'Put both events on the canvas first.' };
+    }
+    return {
+      doc: {
+        ...doc,
+        chain: {
+          kind: operator,
+          left: { kind: 'event', ref: from },
+          right: { kind: 'event', ref: to },
+        },
+        staged: doc.staged.filter((s) => s.id !== sourceId && s.id !== targetId),
+      },
+      outcome: 'spliced',
+    };
   }
 
   const inChain = new Map(events(doc.chain).map((e) => [e.id, e]));
@@ -163,7 +193,11 @@ export function connect(
     return {
       doc,
       outcome: 'rejected',
-      reason: 'Connect the source into the pipeline first.',
+      // Naming the direction matters: the gesture is reversible and people
+      // routinely draw it the other way round.
+      reason: inChain.has(targetId)
+        ? 'Wires run from an event in the pipeline outwards. Drag from the connected event to this one.'
+        : 'Connect one of these to the pipeline first — a wire has to start from something that already runs.',
     };
   }
 
@@ -401,6 +435,590 @@ export function removeEvent(doc: PointyDocument, eventId: string): PointyDocumen
   const layout = { ...doc.layout };
   delete layout[eventId];
   return { ...doc, chain, layout };
+}
+
+/**
+ * Delete a connection — the wire popover's "Delete connection".
+ *
+ * Wires are not stored anywhere: they are the shape of the chain tree
+ * (`edgesOf` derives them), so removing one is a structural edit. The join the
+ * wire came from goes away, and whatever left the program as a result comes
+ * back as *staged* events on the canvas — the inverse of `connect`'s splice,
+ * which pulls staged events in. Layout is kept, so the events do not jump, and
+ * lint's `unconnected-event` warns they will not run, exactly as for any
+ * staged node.
+ *
+ * Two kinds of wire cannot be cut alone, and are refused with the rule the way
+ * other operations refuse rather than handed back a document that lies:
+ *
+ *   - a strand of a fan-out/fan-in join — a `{ }` group or `||` head on one
+ *     side draws ONE wire per exit × entry from a single join node, so no
+ *     individual strand exists to remove;
+ *   - a `||` pair wire — it *is* the pair. Structural, not a relabelled
+ *     connection (the same rule the Connection inspector states).
+ *
+ * A branch wire deletes its path and returns the path's events to staging. A
+ * branch left on one path stays a branch: `single-path-branch` is the lint
+ * warning `removeEvent` already produces for the same shape, so both ways of
+ * removing a path land on one consistent model.
+ */
+export function disconnect(
+  doc: PointyDocument,
+  sourceId: string,
+  targetId: string,
+): StructuralResult {
+  if (!doc.chain) return { doc, refused: 'Nothing to disconnect.' };
+
+  const names = new Map(events(doc.chain).map((e) => [e.id, e.name]));
+  if (!names.has(sourceId) || !names.has(targetId)) {
+    return { doc, refused: 'That connection is not in the pipeline.' };
+  }
+
+  let cut = false;
+  let freed: EventRef[] = [];
+  let refused: string | undefined;
+
+  const fanReason = (outs: number, ins: number) =>
+    `This join draws ${outs * ins} wires at once (a fan of ${outs} × ${ins}), ` +
+    `so one cannot be deleted on its own. Delete one of the events instead.`;
+
+  /** Replace the node the wire lives in; leave everything else structurally alone. */
+  const rewrite = (node: Chain): Chain => {
+    switch (node.kind) {
+      case 'seq':
+      case 'pipe': {
+        // `flow.ts` derives this join's wires as exits(left) × entries(right),
+        // so the pair is a wire of THIS node iff it appears in that product.
+        const outs = exits(node.left);
+        const ins = entries(node.right);
+        if (outs.includes(sourceId) && ins.includes(targetId)) {
+          if (outs.length > 1 || ins.length > 1) {
+            refused = fanReason(outs.length, ins.length);
+            return node;
+          }
+          cut = true;
+          freed = events(node.right);
+          return node.left;
+        }
+        return { ...node, left: rewrite(node.left), right: rewrite(node.right) };
+      }
+
+      case 'branch': {
+        const hit = node.paths.findIndex(
+          (p) => node.on.id === sourceId && entries(p.body).includes(targetId),
+        );
+        if (hit !== -1) {
+          const ins = entries(node.paths[hit].body);
+          if (ins.length > 1) {
+            refused = fanReason(1, ins.length);
+            return node;
+          }
+          cut = true;
+          freed = events(node.paths[hit].body);
+          const paths = node.paths.filter((_, i) => i !== hit);
+          // The last path going takes the branch with it — the same rule
+          // `removeEvent` applies when every path has been pruned.
+          if (paths.length === 0) return { kind: 'event', ref: node.on };
+          return { ...node, paths };
+        }
+        return { ...node, paths: node.paths.map((p) => ({ ...p, body: rewrite(p.body) })) };
+      }
+
+      case 'parallel': {
+        const between = node.members.some(
+          (m, i) =>
+            i > 0 &&
+            exits(node.members[i - 1]).includes(sourceId) &&
+            entries(m).includes(targetId),
+        );
+        if (between) {
+          refused =
+            'A || pair is structural — its wire is the pair, not a connection ' +
+            'between two events. Delete one of the events instead.';
+          return node;
+        }
+        return { ...node, members: node.members.map(rewrite) };
+      }
+
+      case 'group':
+        return { ...node, members: node.members.map(rewrite) };
+
+      case 'event':
+        return node;
+    }
+  };
+
+  const chain = rewrite(doc.chain);
+  if (refused) return { doc, refused };
+  // Both events are live but no join drew this wire — a stale selection.
+  // Refusing beats reporting a delete that changed nothing.
+  if (!cut) return { doc, refused: 'That connection is not in the pipeline.' };
+
+  const remaining = new Set(events(chain).map((e) => e.id));
+  return {
+    doc: {
+      ...doc,
+      chain,
+      staged: [...doc.staged, ...freed.filter((r) => !remaining.has(r.id))],
+    },
+  };
+}
+
+/**
+ * Flip a connection between a || pair and a sequence — the wire popover's
+ * Parallel row, in both directions.
+ *
+ * `||` is structure, not a relabel: making a pair parallel rewrites the seq or
+ * pipe node that joins them into a parallel node, and taking a pair out of `||`
+ * rewrites the two adjacent members back into a seq or pipe node (any further
+ * members of the pair stay parallel with the combined unit). The join is found
+ * the same way `flow.ts` draws it — exits × entries — so the wire the user
+ * clicked identifies the join it came from, fans included.
+ *
+ * A complex member is safe: `emit` wraps a non-atomic parallel member in
+ * parens and the parser reads `(...)` back, so emit → parse → emit holds.
+ * A `{ }` group inside a `||` pair trips lint's `group-in-parallel` — the rule
+ * is reported, not silently applied, same as a retry below the minimum.
+ */
+export function setParallel(
+  doc: PointyDocument,
+  sourceId: string,
+  targetId: string,
+  operator: 'parallel' | 'seq' | 'pipe',
+): StructuralResult {
+  if (!doc.chain) return { doc, refused: 'Nothing is connected yet.' };
+
+  const joinsPair = (outs: string[], ins: string[]) =>
+    outs.includes(sourceId) && ins.includes(targetId);
+
+  let changed = false;
+
+  const rewrite = (node: Chain): Chain => {
+    if (changed) return node;
+
+    switch (node.kind) {
+      case 'seq':
+      case 'pipe': {
+        if (operator === 'parallel' && joinsPair(exits(node.left), entries(node.right))) {
+          changed = true;
+          return { kind: 'parallel', members: [node.left, node.right] };
+        }
+        return { ...node, left: rewrite(node.left), right: rewrite(node.right) };
+      }
+
+      case 'parallel': {
+        if (operator !== 'parallel') {
+          for (let i = 0; i < node.members.length - 1; i += 1) {
+            if (joinsPair(exits(node.members[i]), entries(node.members[i + 1]))) {
+              changed = true;
+              const combined: Chain = {
+                kind: operator,
+                left: node.members[i],
+                right: node.members[i + 1],
+              };
+              const members = [
+                ...node.members.slice(0, i),
+                combined,
+                ...node.members.slice(i + 2),
+              ];
+              return members.length === 1 ? members[0] : { kind: 'parallel', members };
+            }
+          }
+        }
+        return { ...node, members: node.members.map(rewrite) };
+      }
+
+      case 'group':
+        return { ...node, members: node.members.map(rewrite) };
+
+      case 'branch':
+        return { ...node, paths: node.paths.map((p) => ({ ...p, body: rewrite(p.body) })) };
+
+      case 'event':
+        return node;
+    }
+  };
+
+  const chain = rewrite(doc.chain);
+  if (!changed) {
+    return {
+      doc,
+      refused:
+        operator === 'parallel'
+          ? 'Only a sequential or streaming connection can become a || pair.'
+          : 'Only a || pair can become a sequence.',
+    };
+  }
+  return { doc: { ...doc, chain } };
+}
+
+/** Is this pair joined by a || adjacency rather than a seq/pipe wire? */
+export function isParallelJoin(
+  doc: PointyDocument,
+  sourceId: string,
+  targetId: string,
+): boolean {
+  if (!doc.chain) return false;
+  let found = false;
+
+  const walkChain = (node: Chain): void => {
+    if (found) return;
+    switch (node.kind) {
+      case 'parallel':
+        for (let i = 0; i < node.members.length - 1; i += 1) {
+          if (
+            exits(node.members[i]).includes(sourceId) &&
+            entries(node.members[i + 1]).includes(targetId)
+          ) {
+            found = true;
+            return;
+          }
+        }
+        node.members.forEach(walkChain);
+        return;
+      case 'seq':
+      case 'pipe':
+        walkChain(node.left);
+        walkChain(node.right);
+        return;
+      case 'group':
+        node.members.forEach(walkChain);
+        return;
+      case 'branch':
+        node.paths.forEach((p) => walkChain(p.body));
+        return;
+      case 'event':
+        return;
+    }
+  };
+
+  walkChain(doc.chain);
+  return found;
+}
+
+/* ------------------------------------------------- structural context menu */
+
+/** A fresh local event, ready to be named in place. */
+export function blankEvent(name = 'NewEvent'): EventRef {
+  return { id: newEventId(), name, namespace: 'local', attributes: [] };
+}
+
+/**
+ * A blank event whose name is not already taken in this document.
+ *
+ * Identity is name + namespace, so two events both called `NewEvent` are the
+ * SAME event appearing twice — which under CFG is a legitimate thing to write
+ * and emphatically not what someone pressing "New custom event" twice meant.
+ */
+export function uniqueBlankEvent(doc: PointyDocument, base = 'NewEvent'): EventRef {
+  const taken = new Set([
+    ...(doc.chain ? events(doc.chain) : []).map((e) => e.name),
+    ...doc.staged.map((s) => s.name),
+  ]);
+
+  if (!taken.has(base)) return blankEvent(base);
+  for (let n = 2; ; n += 1) {
+    if (!taken.has(`${base}${n}`)) return blankEvent(`${base}${n}`);
+  }
+}
+
+export interface StructuralResult {
+  doc: PointyDocument;
+  /** The event the caller should select and, for a new one, focus for renaming. */
+  focusId?: string;
+  /** Set when nothing was changed, and why. */
+  refused?: string;
+}
+
+/**
+ * `{ Event }` — wrap one event in a concurrency group.
+ *
+ * A group is an orchestrator, so it may not appear inside a `||` pair; that is
+ * the one structural rule the canvas refuses outright rather than reporting,
+ * and the caller checks it before offering the action. Checked again here,
+ * because a model operation should not rely on its caller's manners.
+ */
+export function wrapInGroup(doc: PointyDocument, eventId: string): StructuralResult {
+  if (!doc.chain) return { doc, refused: 'Nothing to wrap.' };
+
+  if (isInsideParallel(doc.chain, eventId)) {
+    return {
+      doc,
+      refused:
+        'This event runs in a || parallel pair. A { } group is an orchestrator and cannot be a process — the parser rejects it.',
+    };
+  }
+
+  if (isDirectGroupMember(doc.chain, eventId)) {
+    return { doc, refused: 'Already in a group.' };
+  }
+
+  const chain = replaceEventLeaf(doc.chain, eventId, (ref) => ({
+    kind: 'group',
+    members: [{ kind: 'event', ref }],
+    attributes: [],
+  }));
+
+  return { doc: { ...doc, chain }, focusId: eventId };
+}
+
+/**
+ * Turn an event into a branch.
+ *
+ * Descriptors are integers assigned by position: whatever already followed the
+ * event becomes 0 (success) and a new event becomes 1 (failure). An event with
+ * no successor has nothing to put on 0, and a branch with one path is a lint
+ * error, so that case is refused with the reason rather than producing an
+ * invalid program.
+ */
+export function convertToBranch(doc: PointyDocument, eventId: string): StructuralResult {
+  if (!doc.chain) return { doc, refused: 'Nothing to convert.' };
+
+  if (isBranchOn(doc.chain, eventId)) {
+    return { doc, refused: 'Already a branch. Use ＋ add branch for another path.' };
+  }
+
+  if (!hasSuccessor(doc.chain, eventId)) {
+    return {
+      doc,
+      refused:
+        'Connect this event to the next one first. A branch needs something on descriptor 0 — a single-path branch is not valid Pointy.',
+    };
+  }
+
+  const failure = blankEvent('OnFailure');
+  const chain = promoteToBranchChain(doc.chain, eventId, failure);
+
+  return {
+    doc: { ...doc, chain, layout: withOffsetFrom(doc.layout, eventId, failure.id, 0, 120) },
+    focusId: failure.id,
+  };
+}
+
+/**
+ * Another path on an existing branch — the `＋ add branch` row.
+ *
+ * The next free descriptor, which is why a branch caps at ten paths: a
+ * descriptor is a single digit, 0–9, by design.
+ */
+export function addBranchPath(doc: PointyDocument, branchEventId: string): StructuralResult {
+  if (!doc.chain) return { doc, refused: 'Nothing to add to.' };
+
+  let refused: string | undefined;
+  let focusId: string | undefined;
+
+  const rewrite = (node: Chain): Chain => {
+    switch (node.kind) {
+      case 'branch': {
+        if (node.on.id !== branchEventId) {
+          return { ...node, paths: node.paths.map((p) => ({ ...p, body: rewrite(p.body) })) };
+        }
+
+        const used = new Set(node.paths.map((p) => p.descriptor));
+        const free = ([0, 1, 2, 3, 4, 5, 6, 7, 8, 9] as Descriptor[]).find((d) => !used.has(d));
+        if (free === undefined) {
+          refused = 'A branch can carry ten paths — descriptors are the integers 0 to 9.';
+          return node;
+        }
+
+        const ref = blankEvent(free === 1 ? 'OnFailure' : `OnDescriptor${free}`);
+        focusId = ref.id;
+        return {
+          ...node,
+          paths: [
+            ...node.paths,
+            {
+              descriptor: free,
+              label: free === 0 ? 'success' : free === 1 ? 'failure' : undefined,
+              body: { kind: 'event', ref },
+            },
+          ],
+        };
+      }
+      case 'seq':
+      case 'pipe':
+        return { ...node, left: rewrite(node.left), right: rewrite(node.right) };
+      case 'parallel':
+      case 'group':
+        return { ...node, members: node.members.map(rewrite) };
+      case 'event':
+        return node;
+    }
+  };
+
+  const chain = rewrite(doc.chain);
+  if (refused || !focusId) return { doc, refused: refused ?? 'That is not a branch.' };
+
+  return {
+    doc: {
+      ...doc,
+      chain,
+      layout: withOffsetFrom(doc.layout, branchEventId, focusId, 260, 120),
+    },
+    focusId,
+  };
+}
+
+/**
+ * A copy of an event, staged beside the original.
+ *
+ * Staged rather than spliced: where the copy belongs in the program is a
+ * decision only the user can make, and they make it by drawing a wire.
+ */
+export function duplicateEvent(doc: PointyDocument, eventId: string): StructuralResult {
+  const source =
+    findEventRef(doc.chain, eventId) ?? doc.staged.find((s) => s.id === eventId);
+  if (!source) return { doc, refused: 'No such event.' };
+
+  // A fresh id and no definition link: two events sharing one definition file
+  // would make editing either of them edit both.
+  const copy: EventRef = { ...source, id: newEventId(), definitionId: undefined };
+
+  return {
+    doc: {
+      ...doc,
+      staged: [...doc.staged, copy],
+      layout: withOffsetFrom(doc.layout, eventId, copy.id, 40, 40),
+    },
+    focusId: copy.id,
+  };
+}
+
+/**
+ * Attach a Python definition to a local event, creating the stub if needed.
+ *
+ * Only `local::` events have their Python here — anything from a registry is
+ * resolved from the package, so its source lives with the package.
+ */
+export function attachDefinition(doc: PointyDocument, eventId: string): StructuralResult {
+  const ref = findEventRef(doc.chain, eventId) ?? doc.staged.find((s) => s.id === eventId);
+  if (!ref) return { doc, refused: 'No such event.' };
+
+  if (ref.namespace !== 'local') {
+    return {
+      doc,
+      refused: `${ref.namespace}::${ref.name} is resolved from the registry, so its Python lives with the package.`,
+    };
+  }
+
+  if (ref.definitionId && doc.definitions[ref.definitionId]) {
+    return { doc, focusId: eventId };
+  }
+
+  const filename = `${snake(ref.name)}.py`;
+  return {
+    doc: {
+      ...patchRef(doc, eventId, (r) => ({ ...r, definitionId: filename })),
+      definitions: {
+        ...doc.definitions,
+        [filename]: { filename, source: definitionStub(ref.name) },
+      },
+    },
+    focusId: eventId,
+  };
+}
+
+function definitionStub(name: string): string {
+  return `from volnux import EventBase
+
+
+class ${name}(EventBase):
+    """Return (ok, result). The second value is the RESULT, not a descriptor.
+
+    For anything beyond success and failure, call
+    self.goto(descriptor, ok, result) with an integer 2-9.
+    """
+
+    def process(self, payload):
+        return True, payload
+`;
+}
+
+function snake(name: string): string {
+  return (
+    name
+      .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+      .replace(/[^A-Za-z0-9]+/g, '_')
+      .toLowerCase()
+      .replace(/^_+|_+$/g, '') || 'event'
+  );
+}
+
+function withOffsetFrom(
+  layout: PointyDocument['layout'],
+  fromId: string,
+  toId: string,
+  dx: number,
+  dy: number,
+): PointyDocument['layout'] {
+  const anchor = layout[fromId];
+  return {
+    ...layout,
+    [toId]: anchor ? { x: anchor.x + dx, y: anchor.y + dy } : { x: 160, y: 160 },
+  };
+}
+
+function findEventRef(chain: Chain | null, id: string): EventRef | undefined {
+  return chain ? events(chain).find((e) => e.id === id) : undefined;
+}
+
+function isBranchOn(chain: Chain, id: string): boolean {
+  const walk = (node: Chain): boolean => {
+    switch (node.kind) {
+      case 'branch':
+        return node.on.id === id || node.paths.some((p) => walk(p.body));
+      case 'seq':
+      case 'pipe':
+        return walk(node.left) || walk(node.right);
+      case 'parallel':
+      case 'group':
+        return node.members.some(walk);
+      case 'event':
+        return false;
+    }
+  };
+  return walk(chain);
+}
+
+function isInsideParallel(chain: Chain, id: string): boolean {
+  const walk = (node: Chain, within: boolean): boolean => {
+    switch (node.kind) {
+      case 'event':
+        return within && node.ref.id === id;
+      case 'seq':
+      case 'pipe':
+        return walk(node.left, within) || walk(node.right, within);
+      case 'parallel':
+        return node.members.some((m) => walk(m, true));
+      case 'group':
+        return node.members.some((m) => walk(m, within));
+      case 'branch':
+        return (within && node.on.id === id) || node.paths.some((p) => walk(p.body, within));
+    }
+  };
+  return walk(chain, false);
+}
+
+function isDirectGroupMember(chain: Chain, id: string): boolean {
+  const walk = (node: Chain): boolean => {
+    switch (node.kind) {
+      case 'group':
+        return (
+          node.members.some((m) => m.kind === 'event' && m.ref.id === id) ||
+          node.members.some(walk)
+        );
+      case 'seq':
+      case 'pipe':
+        return walk(node.left) || walk(node.right);
+      case 'parallel':
+        return node.members.some(walk);
+      case 'branch':
+        return node.paths.some((p) => walk(p.body));
+      case 'event':
+        return false;
+    }
+  };
+  return walk(chain);
 }
 
 /* --------------------------------------------------------------------- attrs */

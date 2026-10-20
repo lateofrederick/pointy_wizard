@@ -24,17 +24,44 @@ export interface StagedNodeData {
  */
 function StagedNodeImpl({ data }: NodeProps<StagedNodeData>) {
   const [name, setName] = useState(data.ref.name);
+  /**
+   * Naming is a PHASE, not the node's permanent costume.
+   *
+   * Enter (or a blur with a non-empty value) commits the name — from then on
+   * the card shows the name as static text and the "Enter to name it" hint is
+   * gone. Before this, the hint stayed on screen for as long as the event was
+   * staged, which after the first rename was indistinguishable from a stuck
+   * label. Clicking the name re-enters the phase.
+   */
+  const [naming, setNaming] = useState(true);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Enter unmounts the input; a blur racing that unmount must not commit twice
+  // (two renames = two undo steps for one keystroke).
+  const committedRef = useRef(false);
 
   useEffect(() => {
-    inputRef.current?.focus();
-    inputRef.current?.select();
-  }, []);
+    if (naming) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [naming]);
 
   const commit = () => {
+    if (committedRef.current) return;
     const trimmed = name.trim();
-    if (trimmed) data.onRename(trimmed);
-    else data.onDiscard();
+    if (trimmed) {
+      committedRef.current = true;
+      data.onRename(trimmed);
+      setNaming(false);
+    } else {
+      data.onDiscard();
+    }
+  };
+
+  const reenter = () => {
+    committedRef.current = false;
+    setName(data.ref.name);
+    setNaming(true);
   };
 
   return (
@@ -62,24 +89,37 @@ function StagedNodeImpl({ data }: NodeProps<StagedNodeData>) {
           </button>
         </div>
 
-        <input
-          ref={inputRef}
-          value={name}
-          onChange={(ev) => setName(ev.target.value)}
-          onBlur={commit}
-          onKeyDown={(ev) => {
-            if (ev.key === 'Enter') commit();
-            if (ev.key === 'Escape') data.onDiscard();
-            ev.stopPropagation(); // reactflow swallows keys otherwise
-          }}
-          aria-label="Event name"
-          placeholder="EventName"
-          className="w-full rounded-[5px] border border-seq/70 bg-bg-sunken px-2 py-1 font-mono text-[12px] text-primary outline-none placeholder:text-disabled"
-        />
+        {naming ? (
+          <input
+            ref={inputRef}
+            value={name}
+            onChange={(ev) => setName(ev.target.value)}
+            onBlur={commit}
+            onKeyDown={(ev) => {
+              if (ev.key === 'Enter') commit();
+              if (ev.key === 'Escape') data.onDiscard();
+              ev.stopPropagation(); // reactflow swallows keys otherwise
+            }}
+            aria-label="Event name"
+            placeholder="EventName"
+            className="w-full rounded-[5px] border border-seq/70 bg-bg-sunken px-2 py-1 font-mono text-[12px] text-primary outline-none placeholder:text-disabled"
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={reenter}
+            title="Click to rename"
+            className="w-full cursor-text rounded-[5px] border border-transparent bg-bg-sunken px-2 py-1 text-left font-mono text-[12px] text-primary outline-none hover:border-seq/40"
+          >
+            {data.ref.name}
+          </button>
+        )}
 
-        <p className="font-sans text-[9px] text-tertiary">
-          Enter to name it · Esc to discard · connect a wire to add it to the pipeline
-        </p>
+        {naming && (
+          <p className="font-sans text-[9px] text-tertiary">
+            Enter to name it · Esc to discard
+          </p>
+        )}
       </div>
 
       <Port type="target" side="left" filled={false} />

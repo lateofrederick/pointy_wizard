@@ -154,7 +154,7 @@ export function PipelineList({ user }: { user: SessionUser }) {
               onClick={createNew}
               className={cn(
                 'h-9 cursor-pointer rounded-[6px] bg-seq px-[18px]',
-                'font-sans text-[11.5px] font-medium text-bg-sunken hover:brightness-110',
+                'font-sans text-[11.5px] font-medium text-bg-sunken hover:bg-seq-hover',
                 busy && 'cursor-not-allowed opacity-50',
               )}
             >

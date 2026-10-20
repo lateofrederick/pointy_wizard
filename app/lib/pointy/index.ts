@@ -29,8 +29,18 @@ export {
   renameAttribute,
   setRetry,
   removeEvent,
+  disconnect,
+  blankEvent,
+  uniqueBlankEvent,
+  wrapInGroup,
+  convertToBranch,
+  addBranchPath,
+  duplicateEvent,
+  attachDefinition,
+  setParallel,
+  isParallelJoin,
 } from './edit';
-export type { ConnectResult } from './edit';
+export type { ConnectResult, StructuralResult } from './edit';
 export { wireGeometry, wireMidpoint } from './geometry';
 export { highlight, TOKEN_CLASS } from './highlight';
 export { parse, tryParse, PointyParseError } from './parse';

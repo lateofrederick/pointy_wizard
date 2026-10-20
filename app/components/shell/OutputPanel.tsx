@@ -5,6 +5,8 @@ import { highlight, TOKEN_CLASS } from '../../lib/pointy/highlight';
 import type { Diagnostic } from '../../lib/pointy';
 import { hasErrors } from '../../lib/pointy';
 import { cn } from '../../lib/cn';
+import type { RunEvent, RunView } from '../../lib/runView';
+import { RUN_STATUS_COPY } from '../../lib/runView';
 import { Chip } from '../ui';
 
 /**
@@ -16,19 +18,37 @@ import { Chip } from '../ui';
  *
  * When there are diagnostics the panel splits and the problems list appears
  * beside the code, with the offending line numbers tinted.
+ *
+ * RUN OUTPUT — screen 12's chrome, and only its chrome. There is no runner
+ * service behind this build (todo.txt, "WHY 11 AND 12 ARE NOT BUILT"), so the
+ * mode shows the gutter and the absence of a run instead of the sample log the
+ * frame was drawn with: no run number, no timings, no per-event lines. Full
+ * logs and Re-run explain on click rather than failing silently or pretending.
  */
 export function OutputPanel({
   filename,
   source,
   diagnostics,
+  onDownload,
+  runView = 'source',
+  runNotice = null,
+  onRunEvent,
 }: {
   filename: string;
   source: string;
   diagnostics: Diagnostic[];
+  onDownload?: () => void;
+  /** Which pair of header/body is showing: the source, or screen 12's run view. */
+  runView?: RunView;
+  /** Why the last Full logs / Re-run press did nothing — see lib/runView.ts. */
+  runNotice?: string | null;
+  /** How this view's controls reach the run state AppShell owns. */
+  onRunEvent?: (event: RunEvent) => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const lines = useMemo(() => highlight(source), [source]);
   const broken = hasErrors(diagnostics);
+  const inRun = runView === 'run';
 
   return (
     <section className="flex min-h-0 flex-col border-t border-edge bg-bg-surface">
@@ -41,9 +61,19 @@ export function OutputPanel({
         >
           {collapsed ? '▶' : '▼'}
         </button>
-        <span className="ds-section-label">LIVE POINTY OUTPUT</span>
-        <span className="font-mono text-[10px] text-tertiary">{filename}.pointy</span>
+        <span className="ds-section-label">
+          {inRun ? 'RUN OUTPUT' : 'LIVE POINTY OUTPUT'}
+        </span>
+        {inRun ? (
+          <span className="font-mono text-[10px] text-tertiary">{RUN_STATUS_COPY}</span>
+        ) : (
+          <span className="font-mono text-[10px] text-tertiary">{filename}.pointy</span>
+        )}
 
+        {/* Stays the COMPILE chip while the run view is open, deliberately: a
+            run that never happened has no outcome to report, and a pipeline
+            broken while this view is open must keep saying so. Compile and
+            runtime are separate states — the reason screen 12 exists. */}
         <Chip tone={broken ? 'red' : 'green'}>
           {broken
             ? `✕ ${diagnostics.filter((d) => d.severity === 'error').length} errors`
@@ -51,11 +81,34 @@ export function OutputPanel({
         </Chip>
 
         <span className="flex-1" />
-        <PanelAction label="⧉ Copy" onClick={() => navigator.clipboard?.writeText(source)} />
-        <PanelAction label="↓ Download" />
+        {inRun ? (
+          <>
+            <PanelAction
+              label="⧉ Full logs"
+              onClick={() => onRunEvent?.({ type: 'logs' })}
+            />
+            <PanelAction label="↓ Re-run" onClick={() => onRunEvent?.({ type: 'run' })} />
+            {/* The run view is a view, not a destination: the emitted source
+                stays one click away. */}
+            <PanelAction
+              label="← Source"
+              onClick={() => onRunEvent?.({ type: 'source' })}
+            />
+          </>
+        ) : (
+          <>
+            <PanelAction
+              label="⧉ Copy"
+              onClick={() => navigator.clipboard?.writeText(source)}
+            />
+            <PanelAction label="↓ Download" onClick={onDownload} />
+          </>
+        )}
       </div>
 
-      {!collapsed && (
+      {!collapsed && inRun && <RunOutputEmptyState notice={runNotice} />}
+
+      {!collapsed && !inRun && (
         <div className="flex min-h-0 flex-1">
           <div className="min-w-0 flex-1 overflow-auto px-5 pb-4">
             <pre className="font-mono text-[10px] leading-4">
@@ -134,5 +187,60 @@ function PanelAction({ label, onClick }: { label: string; onClick?: () => void }
     >
       {label}
     </button>
+  );
+}
+
+/* The run view's body: screen 12's gutter, and the truth where its sample log
+ * was. One invented line — a timing, an event name, a "run #14" — would be
+ * fabricating history for a service that does not exist, so the panel renders
+ * the absence instead. A runtime would append to these lines as it goes.
+ */
+const RUN_EMPTY_LINES = [
+  'no run output',
+  '',
+  'This build has no runner service, so Run pipeline opens this view and starts',
+  'nothing: the pipeline is not executed anywhere, no logs are written, and',
+  'there is no run to report.',
+  '',
+  'A runtime would write one line per event here as it runs — timings, retries,',
+  'the descriptor each branch took, and how the run ended.',
+];
+
+function RunOutputEmptyState({ notice }: { notice: string | null }) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-auto px-5 pb-4">
+      <pre className="font-mono text-[10px] leading-4">
+        {RUN_EMPTY_LINES.map((text, i) => (
+          <div key={i} className="flex">
+            <span
+              aria-hidden
+              className="mr-4 w-6 shrink-0 select-none text-right text-tertiary"
+            >
+              {i + 1}
+            </span>
+            <code
+              className={cn(
+                'whitespace-pre-wrap',
+                i === 0 ? 'text-secondary' : 'text-tertiary',
+              )}
+            >
+              {text}
+            </code>
+          </div>
+        ))}
+      </pre>
+
+      {/* The click that could not do what it said. Same pattern as the SSO
+          buttons on the sign-in screen: say why, in place, rather than look
+          broken or pretend the action ran. */}
+      {notice && (
+        <p
+          role="status"
+          className="mt-3 ml-10 max-w-[70ch] font-sans text-[10px] leading-[15px] text-secondary"
+        >
+          {notice}
+        </p>
+      )}
+    </div>
   );
 }

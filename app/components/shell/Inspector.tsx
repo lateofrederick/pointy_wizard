@@ -11,6 +11,10 @@ import { ConnectionInspector } from './ConnectionInspector';
 import { ExpressionEditor } from './ExpressionEditor';
 import { AuthoriseEventHub } from './AuthoriseEventHub';
 import { api, type GrantView } from '../../lib/api';
+import { useSession } from '../../lib/session';
+import { signInHref } from '../../lib/routes';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 
 type Tab = 'properties' | 'definition';
 
@@ -449,11 +453,18 @@ function PipelineInspector({ store }: { store: PointyDocumentStore }) {
  * fetched rather than read off the document.
  */
 function GrantRow({ packageName }: { packageName: string }) {
+  const user = useSession();
+  const pathname = usePathname();
   const [grant, setGrant] = useState<GrantView | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
+    // Signed out there is nothing to ask about — a grant belongs to a person.
+    if (!user) {
+      setLoaded(true);
+      return;
+    }
     let live = true;
     api
       .listGrants()
@@ -466,7 +477,7 @@ function GrantRow({ packageName }: { packageName: string }) {
     return () => {
       live = false;
     };
-  }, [packageName]);
+  }, [packageName, user]);
 
   async function revoke() {
     await api.revokeGrant(packageName).catch(() => undefined);
@@ -474,6 +485,23 @@ function GrantRow({ packageName }: { packageName: string }) {
   }
 
   if (!loaded) return null;
+
+  // Reaching EventHub is one of the two things that needs an account. Say what
+  // it needs rather than opening a modal that will fail at the last step.
+  if (!user) {
+    return (
+      <div className="flex items-center gap-2 pl-[3.5rem]">
+        <span className="font-sans text-[9px] text-tertiary">not connected</span>
+        <span className="flex-1" />
+        <Link
+          href={signInHref(pathname ?? '/')}
+          className="font-sans text-[9px] text-seq hover:underline"
+        >
+          Sign in to connect →
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <>

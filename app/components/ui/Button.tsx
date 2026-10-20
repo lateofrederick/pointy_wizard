@@ -15,7 +15,7 @@ import { cn } from '../../lib/cn';
 export type ButtonKind = 'primary' | 'secondary' | 'ghost';
 
 const KIND: Record<ButtonKind, string> = {
-  primary: 'bg-seq text-bg-sunken hover:brightness-110 active:brightness-95',
+  primary: 'bg-seq text-bg-sunken hover:bg-seq-hover',
   secondary:
     'border border-edge-strong text-secondary hover:bg-neutral-tint hover:text-primary',
   ghost: 'text-seq hover:bg-seq-tint',
@@ -41,7 +41,7 @@ export function Button({
       className={cn(
         'inline-flex h-[34px] items-center justify-center gap-[9px] rounded-[7px] px-[18px]',
         'font-sans text-[11.5px] font-medium whitespace-nowrap',
-        'transition-[background-color,color,filter] duration-100',
+        'transition-[background-color,color] duration-100',
         'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-seq',
         disabled
           ? 'bg-neutral-tint text-disabled cursor-not-allowed'

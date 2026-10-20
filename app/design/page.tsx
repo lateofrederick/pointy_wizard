@@ -331,7 +331,9 @@ function SurfaceSection() {
         {SURFACES.map(([cls, name, use]) => (
           <div
             key={name}
-            className={`${cls} w-[190px] rounded-[9px] border border-edge p-3.5 shadow-raised`}
+            className={`${cls} w-[190px] rounded-[9px] border border-edge p-3.5 ${
+              name === 'surface' || name === 'raised' ? 'shadow-raised' : ''
+            }`}
           >
             <p className="font-mono text-[11px] font-medium text-code">{name}</p>
             <p className="mt-1 font-sans text-[9.5px] leading-[14px] text-tertiary">{use}</p>

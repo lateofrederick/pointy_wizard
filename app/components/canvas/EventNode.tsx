@@ -25,6 +25,8 @@ export interface EventNodeData {
   /** Run status text for the meta row, e.g. "✕ failed 1.4s". */
   status?: { tone: string; text: string };
   accent?: string;
+  /** Opens the node menu — the same one right-click opens. */
+  onMenu?: (clientX: number, clientY: number) => void;
 }
 
 /**
@@ -41,10 +43,7 @@ function EventNodeImpl({ data, selected }: NodeProps<EventNodeData>) {
   return (
     <div
       style={{ width: NODE_WIDTH }}
-      className={cn(
-        'relative rounded-[9px] border bg-bg-raised shadow-raised',
-        SHELL_STATE[state],
-      )}
+      className={cn('relative rounded-[9px] border bg-bg-raised', SHELL_STATE[state])}
     >
       <AccentBar tone={data.accent ?? 'bg-keyword'} />
 
@@ -58,7 +57,13 @@ function EventNodeImpl({ data, selected }: NodeProps<EventNodeData>) {
           <button
             type="button"
             aria-label={`${ref.name} actions`}
-            className="cursor-pointer px-0.5 font-sans text-[11px] leading-none text-tertiary hover:text-primary"
+            // nodrag keeps reactflow from treating the press as the start of a
+            // node drag, which would swallow the click.
+            className="nodrag cursor-pointer px-0.5 font-sans text-[11px] leading-none text-tertiary hover:text-primary"
+            onClick={(e) => {
+              e.stopPropagation();
+              data.onMenu?.(e.clientX, e.clientY);
+            }}
           >
             ⋮
           </button>

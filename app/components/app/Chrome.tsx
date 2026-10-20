@@ -62,8 +62,6 @@ export function AccountBar({
 
       <span className="flex-1" />
 
-      <ThemeToggle />
-
       <button
         type="button"
         onClick={() => setMenuOpen((o) => !o)}
@@ -73,6 +71,8 @@ export function AccountBar({
       >
         {initial(user)}
       </button>
+
+      <ThemeToggle />
 
       {menuOpen && (
         <div

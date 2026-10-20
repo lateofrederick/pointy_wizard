@@ -16,12 +16,12 @@ export type NodeState =
 export const NODE_WIDTH = 200;
 
 export const SHELL_STATE: Record<NodeState, string> = {
-  default: 'border-edge-strong',
-  selected: 'border-seq border-2 shadow-[0_0_16px_rgba(0,229,255,0.35)]',
-  error: 'border-danger border-[1.5px] shadow-[0_0_16px_rgba(255,95,87,0.30)]',
-  failed: 'border-danger/70 border-[1.5px]',
-  skipped: 'border-edge-strong opacity-45',
-  reused: 'border-flow/85 border-[1.5px] border-dashed',
+  default: 'border-edge-strong shadow-raised',
+  selected: 'border-seq border-2 shadow-sel',
+  error: 'border-danger border-[1.5px] shadow-err',
+  failed: 'border-danger/70 border-[1.5px] shadow-raised',
+  skipped: 'border-edge-strong opacity-45 shadow-raised',
+  reused: 'border-flow/85 border-[1.5px] border-dashed shadow-raised',
 };
 
 const NAMESPACE_STYLE: Record<Namespace, { tint: string; text: string; glyph: string }> = {

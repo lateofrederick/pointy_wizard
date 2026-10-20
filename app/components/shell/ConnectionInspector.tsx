@@ -17,26 +17,29 @@ const OPERATORS = [
     name: 'Streaming pipe',
     blurb: 'Downstream starts before upstream ends. Memory-bounded.',
   },
-];
+  {
+    id: 'parallel' as const,
+    glyph: '||',
+    name: 'Parallel pair',
+    blurb: 'Both run at once in a process pool.',
+  },
+] as const;
 
 /**
  * The Connection panel — Figma screen 07.
  *
  * Selecting a wire turns the inspector into this. It is where the operator is
- * changed, which matters because the on-wire chips are currently hidden pending
- * a design decision: routing the change through the inspector means the
- * execution model is still editable without pre-empting that call.
- *
- * `||` and branch wires are not editable here. Making a pair parallel or
- * promoting to a branch restructures the chain rather than relabelling one
- * connection, and both have their own gestures.
+ * changed — all three of them: `||` is a chain rewrite rather than a relabel,
+ * but `setParallel` performs that rewrite, so the row is live here exactly as
+ * it is in the on-wire popover. Branch wires are the only ones not editable
+ * here: their identity is the descriptor port they leave.
  */
 export function ConnectionInspector({ store }: { store: PointyDocumentStore }) {
   const { selectedWire, flow, changeWireOperator, selectWire } = store;
   if (!selectedWire) return null;
 
   const name = (id: string) => flow.nodes.find((n) => n.id === id)?.ref.name ?? id;
-  const editable = selectedWire.operator === 'seq' || selectedWire.operator === 'pipe';
+  const editable = selectedWire.operator !== 'branch';
 
   return (
     <aside className="flex w-[340px] shrink-0 flex-col border-l border-edge bg-bg-surface">
@@ -81,14 +84,20 @@ export function ConnectionInspector({ store }: { store: PointyDocumentStore }) {
                 <button
                   key={op.id}
                   type="button"
-                  onClick={() =>
-                    changeWireOperator(selectedWire.source, selectedWire.target, op.id)
-                  }
+                  // Re-picking the active operator is a write for no change —
+                  // an undo step the user never asked for. Skip it.
+                  onClick={() => {
+                    if (!active)
+                      changeWireOperator(selectedWire.source, selectedWire.target, op.id);
+                  }}
                   className={cn(
-                    'flex cursor-pointer flex-col gap-1 rounded-[7px] border px-3 py-2.5 text-left',
+                    'flex flex-col gap-1 rounded-[7px] border px-3 py-2.5 text-left',
                     active
-                      ? 'border-seq/60 bg-seq-tint'
+                      ? op.id === 'seq'
+                        ? 'border-seq/60 bg-seq-tint'
+                        : 'border-flow/60 bg-flow-tint'
                       : 'border-edge bg-bg-sunken hover:border-edge-strong',
+                    !active && 'cursor-pointer',
                   )}
                 >
                   <span className="flex items-center gap-2">
@@ -103,7 +112,13 @@ export function ConnectionInspector({ store }: { store: PointyDocumentStore }) {
                     <span className="font-sans text-[11px] font-medium text-primary">
                       {op.name}
                     </span>
-                    {active && <span className="ml-auto text-[10px] text-seq">✓</span>}
+                    {active && (
+                      <span
+                        className={cn('ml-auto text-[10px]', op.id === 'seq' ? 'text-seq' : 'text-flow')}
+                      >
+                        ✓
+                      </span>
+                    )}
                   </span>
                   <span className="font-sans text-[9.5px] leading-[15px] text-tertiary">
                     {op.blurb}
@@ -113,10 +128,9 @@ export function ConnectionInspector({ store }: { store: PointyDocumentStore }) {
             })}
           </div>
         ) : (
-          <Callout tone="info" title={`This is a ${selectedWire.operator} connection`}>
-            {selectedWire.operator === 'branch'
-              ? 'A branch wire is defined by its descriptor, which comes from the port it leaves. Edit the branch rows on the node instead.'
-              : 'A || pair is a structural relationship, not a relabelled connection. Change it by regrouping the events.'}
+          <Callout tone="info" title="This is a branch connection">
+            A branch wire is defined by its descriptor, which comes from the port it leaves. Edit
+            the branch rows on the node instead.
           </Callout>
         )}
 
