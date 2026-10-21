@@ -99,6 +99,12 @@ export function AppShell({
   // live in lib/runView.ts.
   const [run, dispatchRun] = useReducer(runReducer, INITIAL_RUN_STATE);
 
+  // The output panel's slot height: open it fills 280px (the panel is h-full,
+  // so the PROBLEMS column coming and going never changes the panel's height),
+  // collapsed it is just the 42px header — the space goes back to the canvas
+  // rather than a dark strip under a fixed wrapper.
+  const [outputOpen, setOutputOpen] = useState(true);
+
   const current = useMemo(
     () => snapshot(store.doc, store.source),
     [store.doc, store.source],
@@ -316,7 +322,7 @@ export function AppShell({
             </ReactFlowProvider>
           </div>
 
-          <div className="h-[280px] shrink-0">
+          <div className={`shrink-0 ${outputOpen ? 'h-[280px]' : 'h-[42px]'}`}>
             <OutputPanel
               filename={store.doc.name}
               source={store.source}
@@ -326,6 +332,8 @@ export function AppShell({
               runView={run.view}
               runNotice={run.notice}
               onRunEvent={dispatchRun}
+              collapsed={!outputOpen}
+              onToggleCollapse={() => setOutputOpen((open) => !open)}
             />
           </div>
         </main>

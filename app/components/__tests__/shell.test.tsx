@@ -308,6 +308,33 @@ describe('Shell layout controls', () => {
       screen.queryByRole('button', { name: 'Collapse registry panel' }),
     ).toBeDefined();
   });
+
+  it('the output panel fills its slot whether or not problems show', () => {
+    // bare has problems, so the PROBLEMS column is up right now — the state
+    // that used to leave a dark strip below the panel once it cleared.
+    mount({ initial: bare });
+    expect(screen.getByText('PROBLEMS')).toBeDefined();
+
+    // jsdom cannot measure: assert the classes that carry the contract. The
+    // panel is h-full (content never drives its height) inside a 280px slot,
+    // and collapsing shrinks the SLOT — not a fixed wrapper over a shrunken
+    // panel.
+    const section = screen.getByText('LIVE POINTY OUTPUT').closest('section')!;
+    expect(section.className).toContain('h-full');
+    const slot = section.parentElement as HTMLElement;
+    expect(slot.className).toContain('h-[280px]');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse output panel' }));
+    expect(slot.className).toContain('h-[42px]');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand output panel' }));
+    expect(slot.className).toContain('h-[280px]');
+
+    // Fix the problem away: the column goes, the slot does not move.
+    fireEvent.click(screen.getByRole('button', { name: 'Add event definition →' }));
+    expect(screen.queryByText('PROBLEMS')).toBeNull();
+    expect(slot.className).toContain('h-[280px]');
+  });
 });
 
 /**

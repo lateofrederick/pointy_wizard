@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { highlight, TOKEN_CLASS } from '../../lib/pointy/highlight';
 import type { Diagnostic } from '../../lib/pointy';
 import { hasErrors } from '../../lib/pointy';
@@ -24,6 +24,13 @@ import { Chip } from '../ui';
  * mode shows the gutter and the absence of a run instead of the sample log the
  * frame was drawn with: no run number, no timings, no per-event lines. Full
  * logs and Re-run explain on click rather than failing silently or pretending.
+ *
+ * The panel FILLS its slot (h-full) rather than hugging its content: the
+ * PROBLEMS column comes and goes with the diagnostics, and a content-sized
+ * panel would shrink when they clear, leaving the page background showing
+ * under the slot. Collapse is controlled by AppShell, which owns the slot's
+ * height — so collapsing genuinely reclaims the space instead of revealing a
+ * dark strip below a fixed-height wrapper.
  */
 export function OutputPanel({
   filename,
@@ -34,6 +41,8 @@ export function OutputPanel({
   runView = 'source',
   runNotice = null,
   onRunEvent,
+  collapsed,
+  onToggleCollapse,
 }: {
   filename: string;
   source: string;
@@ -47,19 +56,22 @@ export function OutputPanel({
   runNotice?: string | null;
   /** How this view's controls reach the run state AppShell owns. */
   onRunEvent?: (event: RunEvent) => void;
+  /** Controlled by AppShell — its wrapper's height follows this. */
+  collapsed: boolean;
+  onToggleCollapse: () => void;
 }) {
-  const [collapsed, setCollapsed] = useState(false);
   const lines = useMemo(() => highlight(source), [source]);
   const broken = hasErrors(diagnostics);
   const inRun = runView === 'run';
 
   return (
-    <section className="flex min-h-0 flex-col border-t border-edge bg-bg-surface">
+    <section className="flex h-full min-h-0 flex-col border-t border-edge bg-bg-surface">
       <div className="flex h-[42px] shrink-0 items-center gap-3 px-5">
         <button
           type="button"
-          onClick={() => setCollapsed((c) => !c)}
+          onClick={onToggleCollapse}
           aria-expanded={!collapsed}
+          aria-label={collapsed ? 'Expand output panel' : 'Collapse output panel'}
           className="cursor-pointer font-sans text-[9px] text-tertiary hover:text-primary"
         >
           {collapsed ? '▶' : '▼'}

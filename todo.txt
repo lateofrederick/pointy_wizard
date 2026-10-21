@@ -485,6 +485,17 @@ Node ids (3:2) open in Figma via ?node-id=3-2
       only; shell.test's mount() now threads keepDraft (default off).
       THE REAL FIX, still to design: express the link in the language or
       as a server column, then delete this module. 334 green, gate clean.
+[x] Follow-up — the output panel keeps its height whether or not problems
+      show. The dark strip: OutputPanel's section hugged its content inside
+      a fixed 280px wrapper, so when the PROBLEMS column cleared the panel
+      shrank and the page background showed under the slot — and collapsing
+      did the same thing on purpose, revealing a dark strip rather than
+      reclaiming space. The section is now h-full (content never drives its
+      height; the columns scroll), and the collapse state moved into
+      AppShell, which owns the slot: open = 280px, collapsed = the 42px
+      header, the space genuinely returning to the canvas. The toggle
+      button got an aria-label (Collapse/Expand output panel) — it was an
+      unnamed ▼. 335 green, gate clean.
 
 
 == UNDESIGNED — needs design before planning ==                              §11
