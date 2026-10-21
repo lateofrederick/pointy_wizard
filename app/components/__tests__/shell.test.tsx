@@ -38,14 +38,21 @@ const someone: SessionUser = { id: 'usr_1', email: 'lateo@volnux.dev', name: 'la
 function mount({
   user = null,
   initial = sampleDocument,
+  keepDraft = false,
 }: {
   user?: SessionUser | null;
   initial?: PointyDocument;
+  /**
+   * Draft/definition-cache persistence is off by default here so unrelated
+   * tests start from a clean browser; the tests that assert persistence pass
+   * true (and rely on the global localStorage.clear() for isolation).
+   */
+  keepDraft?: boolean;
 } = {}) {
   return render(
     <ThemeProvider>
       <SessionProvider user={user}>
-        <AppShell initial={initial} keepDraft={false} />
+        <AppShell initial={initial} keepDraft={keepDraft} />
       </SessionProvider>
     </ThemeProvider>,
   );
@@ -386,6 +393,48 @@ describe('Workspace rename', () => {
     fireEvent.change(blank, { target: { value: '   ' } });
     fireEvent.keyDown(blank, { key: 'Enter' });
     expect(barName()).toBeDefined();
+  });
+});
+
+/**
+ * A definition is two facts — the Python file and the event→file link — and
+ * neither survives the `.pointy` round-trip (parse hands back definitions: {},
+ * emit never writes definitionId), so the browser cache is the only memory.
+ * The observable is PROBLEMS: the missing-definition diagnostic fires exactly
+ * when the link is absent, and its fix button comes back with it.
+ */
+describe('Definition cache across a refresh', () => {
+  it('keeps a definition added this session after a refresh', () => {
+    // Control: no definition yet, so the diagnostic and its PROBLEMS column
+    // are up. keepDraft=true — the cache is editor persistence, off in the
+    // sandbox.
+    mount({ initial: bare, keepDraft: true });
+    expect(screen.getByText('PROBLEMS')).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add event definition →' }));
+    expect(screen.queryByText('PROBLEMS')).toBeNull();
+
+    // A real refresh does not run React's cleanups — beforeunload is the
+    // only flush — then a fresh mount on the same link-less initial doc.
+    fireEvent(window, new Event('beforeunload'));
+    cleanup();
+    mount({ initial: bare, keepDraft: true });
+
+    // Lint sees a linked definition again: no diagnostic, no fix button.
+    expect(screen.queryByText('PROBLEMS')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add event definition →' })).toBeNull();
+  });
+
+  it('lands the write on unmount even inside the debounce window', () => {
+    // No beforeunload, no sleep: unmount alone must flush — the sign-in
+    // redirect and save-and-navigate path.
+    const { unmount } = mount({ initial: bare, keepDraft: true });
+    fireEvent.click(screen.getByRole('button', { name: 'Add event definition →' }));
+    unmount();
+
+    mount({ initial: bare, keepDraft: true });
+    expect(screen.queryByRole('button', { name: 'Add event definition →' })).toBeNull();
+    expect(screen.queryByText('PROBLEMS')).toBeNull();
   });
 });
 

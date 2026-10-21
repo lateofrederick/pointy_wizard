@@ -468,10 +468,32 @@ Node ids (3:2) open in Figma via ?node-id=3-2
       stripped rather than doubled. store.rename goes through setDoc, so
       the change is undoable, dirties the snapshot, and the first save
       carries the new name. 327 green, gate clean.
+[x] Follow-up — event definitions survive a refresh (browser cache until
+      the backend round-trips them). THE ROOT CAUSE: a definition is two
+      facts — the Python map AND ref.definitionId — and the link exists
+      NOWHERE in the round-trip: .pointy has no syntax for it (parse.ts
+      returns definitions: {}, emit never writes it), the draft carried the
+      map but not the links, and the server stores the map but a reload
+      re-parses source. Every refresh looked like "the definition is lost".
+      lib/definitionCache.ts keeps both facts in localStorage, scoped
+      pw-defs-<pipelineId|draft>: applied once on load (cache wins per key;
+      dangling links refused), rewritten debounced with an unmount flush
+      (sign-in redirect, save-and-navigate) plus a beforeunload flush (a
+      real refresh runs no React cleanups). Writes stay off until the
+      merge has applied, or the first write would clobber the cache with
+      the link-less loaded doc. Sandbox (keepDraft=false) stays memory-
+      only; shell.test's mount() now threads keepDraft (default off).
+      THE REAL FIX, still to design: express the link in the language or
+      as a server column, then delete this module. 334 green, gate clean.
 
 
 == UNDESIGNED — needs design before planning ==                              §11
 
+[ ] Definition links in the round-trip. ref.definitionId exists only in
+    memory: .pointy has no syntax for it and the server has no column, so
+    every reload re-parses a link-less doc. lib/definitionCache.ts bridges
+    this in the browser (done 2026-10-20) — design the language or server
+    fix, then delete that module.
 [ ] Browsing EventHub: results, component detail, versions, install
 [ ] Run history: list of runs, per-event logs, traceback drill-down
 [ ] Import flow: paste/upload -> parse -> canvas

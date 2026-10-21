@@ -8,6 +8,12 @@ import { api, ApiError } from '../../lib/api';
 import { useSession } from '../../lib/session';
 import { signInHref } from '../../lib/routes';
 import { emit, tryParse } from '../../lib/pointy';
+import {
+  applyDefinitionSnapshot,
+  readDefinitionCache,
+  snapshotDefinitions,
+  writeDefinitionCache,
+} from '../../lib/definitionCache';
 import { INITIAL_RUN_STATE, runReducer } from '../../lib/runView';
 import type { PointyDocument } from '../../types/pointy';
 import { Canvas } from '../canvas/Canvas';
@@ -124,6 +130,49 @@ export function AppShell({
     const id = window.setTimeout(() => writeDraft(store.doc), 400);
     return () => window.clearTimeout(id);
   }, [isDraft, store.doc, current]);
+
+  /* --- definition cache --------------------------------------------------- */
+
+  // Event definitions cannot survive a reload any other way: `.pointy` source
+  // has no syntax for the event→file link and the server round-trips only the
+  // definitions map, so the link is restored from the browser. See
+  // lib/definitionCache.ts for why this exists and what deletes it.
+  const defScope = pipelineId ?? 'draft';
+  // Writes stay off until the merge has been applied: writing before that
+  // would clobber the cache with the just-loaded, link-less document. Both
+  // setDoc and this flag land in the same batch, so the first write sees the
+  // merged doc.
+  const [defsReady, setDefsReady] = useState(false);
+
+  useEffect(() => {
+    if (!keepDraft) return;
+    const snap = readDefinitionCache(defScope);
+    if (snap) setDoc((d) => applyDefinitionSnapshot(d, snap));
+    setDefsReady(true);
+  }, [keepDraft, defScope, setDoc]);
+
+  // Rewrite as the document changes. Debounced like the draft; the cleanup
+  // writes rather than only clearing, so an unmount mid-window — sign-in
+  // redirect, save-and-navigate — lands the last write instead of dropping it.
+  // The extra intermediate writes cost one small JSON blob.
+  useEffect(() => {
+    if (!keepDraft || !defsReady) return;
+    const write = () => writeDefinitionCache(defScope, snapshotDefinitions(store.doc));
+    const id = window.setTimeout(write, 400);
+    return () => {
+      window.clearTimeout(id);
+      write();
+    };
+  }, [keepDraft, defsReady, defScope, store.doc]);
+
+  // A real refresh or tab close does not run React's cleanups — beforeunload
+  // is the only hook that still has the document in hand.
+  useEffect(() => {
+    if (!keepDraft || !defsReady) return;
+    const flush = () => writeDefinitionCache(defScope, snapshotDefinitions(store.doc));
+    window.addEventListener('beforeunload', flush);
+    return () => window.removeEventListener('beforeunload', flush);
+  }, [keepDraft, defsReady, defScope, store.doc]);
 
   /* --- saving ------------------------------------------------------------- */
 
