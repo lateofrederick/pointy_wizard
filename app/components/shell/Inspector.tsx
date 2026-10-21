@@ -5,7 +5,7 @@ import type { PointyDocumentStore } from '../../hooks/usePointyDocument';
 import type { Attr, Namespace, RegistrySource } from '../../types/pointy';
 import { emitExpr } from '../../lib/pointy/emit';
 import { cn } from '../../lib/cn';
-import { Button, Callout, Chip, CollapsibleSection, Field, SectionHeader } from '../ui';
+import { Button, Callout, Chip, CollapsibleSection, Field } from '../ui';
 import { DefinitionEditor } from '../editor/DefinitionEditor';
 import { ConnectionInspector } from './ConnectionInspector';
 import { ExpressionEditor } from './ExpressionEditor';
@@ -463,6 +463,13 @@ function PipelineInspector({ store }: { store: PointyDocumentStore }) {
   const [newVariableName, setNewVariableName] = useState('');
   const [editingSource, setEditingSource] = useState<string | null>(null);
 
+  // Same disclosure pattern as the event inspector: owned here so the layout
+  // preference holds while the panel shows the file. Unmounts with the panel,
+  // which is the natural scope for a file-level view.
+  const [sections, setSections] = useState({ directives: true, variables: true, sources: true });
+  const setSection = (id: keyof typeof sections, open: boolean) =>
+    setSections((prev) => ({ ...prev, [id]: open }));
+
   return (
     <aside className="flex w-[340px] shrink-0 flex-col border-l border-edge bg-bg-surface">
       <div className="border-l-2 border-seq px-[14px] pt-4 pb-1">
@@ -473,39 +480,48 @@ function PipelineInspector({ store }: { store: PointyDocumentStore }) {
       </p>
 
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-[14px] py-4">
-        <SectionHeader>DIRECTIVES</SectionHeader>
-        <div>
-          <p className="mb-1.5 font-sans text-[10.5px] text-secondary">Mode</p>
-          <div className="flex gap-0.5 rounded-[6px] border border-edge bg-bg-sunken p-[3px]">
-            {(['DAG', 'CFG'] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => store.setMode(m)}
-                className={cn(
-                  'flex-1 cursor-pointer rounded-[4px] py-1.5 font-mono text-[10.5px] font-medium',
-                  mode === m ? 'bg-seq-tint text-seq' : 'text-tertiary hover:text-secondary',
-                )}
-              >
-                {m}
-              </button>
-            ))}
+        <CollapsibleSection
+          title="DIRECTIVES"
+          open={sections.directives}
+          onOpenChange={(open) => setSection('directives', open)}
+        >
+          <div>
+            <p className="mb-1.5 font-sans text-[10.5px] text-secondary">Mode</p>
+            <div className="flex gap-0.5 rounded-[6px] border border-edge bg-bg-sunken p-[3px]">
+              {(['DAG', 'CFG'] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => store.setMode(m)}
+                  className={cn(
+                    'flex-1 cursor-pointer rounded-[4px] py-1.5 font-mono text-[10.5px] font-medium',
+                    mode === m ? 'bg-seq-tint text-seq' : 'text-tertiary hover:text-secondary',
+                  )}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1.5 font-sans text-[9.5px] leading-[15px] text-tertiary">
+              CFG lets the same event appear more than once — how loops, retries and agent
+              handoffs are expressed. DAG forbids reuse.
+            </p>
           </div>
-          <p className="mt-1.5 font-sans text-[9.5px] leading-[15px] text-tertiary">
-            CFG lets the same event appear more than once — how loops, retries and agent
-            handoffs are expressed. DAG forbids reuse.
-          </p>
-        </div>
+        </CollapsibleSection>
 
-        <SectionHeader
+        <CollapsibleSection
+          title="VARIABLES"
+          open={sections.variables}
+          onOpenChange={(open) => setSection('variables', open)}
           action="＋ add"
           onAction={() => {
+            // The new-variable row lives inside the section — open it if the
+            // section was collapsed, or the press would look dead too.
+            if (!sections.variables) setSection('variables', true);
             setNewVariableName(nextVariableName(doc.variables.map((v) => v.name)));
             setEditingVariable('');
           }}
         >
-          VARIABLES
-        </SectionHeader>
 
         <div className="flex flex-col gap-1 rounded-[7px] border border-edge bg-bg-sunken px-3 py-2.5">
           {doc.variables.length === 0 && editingVariable === null && (
@@ -563,11 +579,19 @@ function PipelineInspector({ store }: { store: PointyDocumentStore }) {
               />
             </div>
           )}
-        </div>
+          </div>
+        </CollapsibleSection>
 
-        <SectionHeader action="＋ add" onAction={() => setEditingSource('')}>
-          SOURCES
-        </SectionHeader>
+        <CollapsibleSection
+          title="SOURCES"
+          open={sections.sources}
+          onOpenChange={(open) => setSection('sources', open)}
+          action="＋ add"
+          onAction={() => {
+            if (!sections.sources) setSection('sources', true);
+            setEditingSource('');
+          }}
+        >
 
         <div className="flex flex-col gap-1 rounded-[7px] border border-edge bg-bg-sunken px-3 py-2.5">
           {doc.sources.length === 0 && editingSource === null && (
@@ -620,7 +644,8 @@ function PipelineInspector({ store }: { store: PointyDocumentStore }) {
               onCancel={() => setEditingSource(null)}
             />
           )}
-        </div>
+          </div>
+        </CollapsibleSection>
 
         <div className="mt-2">
           <Chip tone="neutral">Select a node to inspect it</Chip>

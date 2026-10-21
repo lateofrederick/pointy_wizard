@@ -2,7 +2,7 @@
 
 import type { PointyDocumentStore } from '../../hooks/usePointyDocument';
 import { cn } from '../../lib/cn';
-import { Callout, SectionHeader } from '../ui';
+import { Callout, CollapsibleSection } from '../ui';
 
 const OPERATORS = [
   {
@@ -62,92 +62,97 @@ export function ConnectionInspector({ store }: { store: PointyDocumentStore }) {
       </p>
 
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-[14px] py-4">
-        <SectionHeader>ENDPOINTS</SectionHeader>
-        <div className="rounded-[7px] border border-edge bg-bg-sunken px-3 py-2.5">
-          <p className="font-mono text-[10.5px] text-code">
-            <span className="text-tertiary">from </span>
-            {name(selectedWire.source)}
-          </p>
-          <p className="mt-1 font-mono text-[10.5px] text-code">
-            <span className="text-tertiary">to&nbsp;&nbsp; </span>
-            {name(selectedWire.target)}
-          </p>
-        </div>
-
-        <SectionHeader>OPERATOR</SectionHeader>
-
-        {editable ? (
-          <div className="flex flex-col gap-1.5">
-            {OPERATORS.map((op) => {
-              const active = selectedWire.operator === op.id;
-              return (
-                <button
-                  key={op.id}
-                  type="button"
-                  // Re-picking the active operator is a write for no change —
-                  // an undo step the user never asked for. Skip it.
-                  onClick={() => {
-                    if (!active)
-                      changeWireOperator(selectedWire.source, selectedWire.target, op.id);
-                  }}
-                  className={cn(
-                    'flex flex-col gap-1 rounded-[7px] border px-3 py-2.5 text-left',
-                    active
-                      ? op.id === 'seq'
-                        ? 'border-seq/60 bg-seq-tint'
-                        : 'border-flow/60 bg-flow-tint'
-                      : 'border-edge bg-bg-sunken hover:border-edge-strong',
-                    !active && 'cursor-pointer',
-                  )}
-                >
-                  <span className="flex items-center gap-2">
-                    <span
-                      className={cn(
-                        'font-mono text-[11px] font-medium',
-                        op.id === 'seq' ? 'text-seq' : 'text-flow',
-                      )}
-                    >
-                      {op.glyph}
-                    </span>
-                    <span className="font-sans text-[11px] font-medium text-primary">
-                      {op.name}
-                    </span>
-                    {active && (
-                      <span
-                        className={cn('ml-auto text-[10px]', op.id === 'seq' ? 'text-seq' : 'text-flow')}
-                      >
-                        ✓
-                      </span>
-                    )}
-                  </span>
-                  <span className="font-sans text-[9.5px] leading-[15px] text-tertiary">
-                    {op.blurb}
-                  </span>
-                </button>
-              );
-            })}
+        <CollapsibleSection title="ENDPOINTS">
+          <div className="rounded-[7px] border border-edge bg-bg-sunken px-3 py-2.5">
+            <p className="font-mono text-[10.5px] text-code">
+              <span className="text-tertiary">from </span>
+              {name(selectedWire.source)}
+            </p>
+            <p className="mt-1 font-mono text-[10.5px] text-code">
+              <span className="text-tertiary">to&nbsp;&nbsp; </span>
+              {name(selectedWire.target)}
+            </p>
           </div>
-        ) : (
-          <Callout tone="info" title="This is a branch connection">
-            A branch wire is defined by its descriptor, which comes from the port it leaves. Edit
-            the branch rows on the node instead.
-          </Callout>
-        )}
+        </CollapsibleSection>
 
-        <SectionHeader>EMITS</SectionHeader>
-        <div className="rounded-[7px] border border-edge bg-bg-sunken px-3 py-2.5">
-          <code className="font-mono text-[10.5px]">
-            <span className="text-primary">{name(selectedWire.source)}</span>{' '}
-            <span className={selectedWire.operator === 'pipe' ? 'text-flow' : 'text-seq'}>
-              {selectedWire.operator === 'pipe'
-                ? '|->'
-                : selectedWire.operator === 'parallel'
-                  ? '||'
-                  : '->'}
-            </span>{' '}
-            <span className="text-primary">{name(selectedWire.target)}</span>
-          </code>
-        </div>
+        <CollapsibleSection title="OPERATOR">
+          {editable ? (
+            <div className="flex flex-col gap-1.5">
+              {OPERATORS.map((op) => {
+                const active = selectedWire.operator === op.id;
+                return (
+                  <button
+                    key={op.id}
+                    type="button"
+                    // Re-picking the active operator is a write for no change —
+                    // an undo step the user never asked for. Skip it.
+                    onClick={() => {
+                      if (!active)
+                        changeWireOperator(selectedWire.source, selectedWire.target, op.id);
+                    }}
+                    className={cn(
+                      'flex flex-col gap-1 rounded-[7px] border px-3 py-2.5 text-left',
+                      active
+                        ? op.id === 'seq'
+                          ? 'border-seq/60 bg-seq-tint'
+                          : 'border-flow/60 bg-flow-tint'
+                        : 'border-edge bg-bg-sunken hover:border-edge-strong',
+                      !active && 'cursor-pointer',
+                    )}
+                  >
+                    <span className="flex items-center gap-2">
+                      <span
+                        className={cn(
+                          'font-mono text-[11px] font-medium',
+                          op.id === 'seq' ? 'text-seq' : 'text-flow',
+                        )}
+                      >
+                        {op.glyph}
+                      </span>
+                      <span className="font-sans text-[11px] font-medium text-primary">
+                        {op.name}
+                      </span>
+                      {active && (
+                        <span
+                          className={cn(
+                            'ml-auto text-[10px]',
+                            op.id === 'seq' ? 'text-seq' : 'text-flow',
+                          )}
+                        >
+                          ✓
+                        </span>
+                      )}
+                    </span>
+                    <span className="font-sans text-[9.5px] leading-[15px] text-tertiary">
+                      {op.blurb}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <Callout tone="info" title="This is a branch connection">
+              A branch wire is defined by its descriptor, which comes from the port it leaves.
+              Edit the branch rows on the node instead.
+            </Callout>
+          )}
+        </CollapsibleSection>
+
+        <CollapsibleSection title="EMITS">
+          <div className="rounded-[7px] border border-edge bg-bg-sunken px-3 py-2.5">
+            <code className="font-mono text-[10.5px]">
+              <span className="text-primary">{name(selectedWire.source)}</span>{' '}
+              <span className={selectedWire.operator === 'pipe' ? 'text-flow' : 'text-seq'}>
+                {selectedWire.operator === 'pipe'
+                  ? '|->'
+                  : selectedWire.operator === 'parallel'
+                    ? '||'
+                    : '->'}
+              </span>{' '}
+              <span className="text-primary">{name(selectedWire.target)}</span>
+            </code>
+          </div>
+        </CollapsibleSection>
       </div>
     </aside>
   );

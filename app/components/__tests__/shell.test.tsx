@@ -214,6 +214,19 @@ describe('Collapsible inspector sections', () => {
     expect(screen.getByRole('button', { name: 'SOURCE FILE' })).toBeDefined();
   });
 
+  it('the file-level sections collapse too when nothing is selected', () => {
+    mount();
+    const toggle = screen.getByRole('button', { name: 'DIRECTIVES' });
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(contentOf(toggle).hidden).toBe(true);
+    // The mode buttons live inside DIRECTIVES — hidden with it, still mounted.
+    // getByText, not getByRole: role queries skip hidden elements by default.
+    expect(within(contentOf(toggle)).getByText('DAG')).toBeDefined();
+  });
+
   it('collapsing SOURCE FILE hides the editor but keeps the status row', () => {
     // The fix left us on the Definition tab, editor open.
     mount({ initial: bare });

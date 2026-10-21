@@ -434,6 +434,13 @@ Node ids (3:2) open in Figma via ?node-id=3-2
 [x] 8 tests (5 primitive, 3 integration through the fix-driven selection
       path — the canvas cannot select in jsdom). 319 green.
       Full gate green: tsc / 319 tests / eslint / build.
+[x] Follow-up the same day — "I still can't expand the right section":
+      the toggle button only spanned the label, so clicking the middle of a
+      header row hit a dead spacer. The button now fills the whole row
+      (flex-1, text-left); chevron 7px -> 8px. And only the event inspector
+      had been converted — DIRECTIVES / VARIABLES / SOURCES (pipeline view)
+      and ENDPOINTS / OPERATOR / EMITS (wire view) are collapsible now too.
+      320 green, gate clean.
 
 
 == UNDESIGNED — needs design before planning ==                              §11

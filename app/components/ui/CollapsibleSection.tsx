@@ -11,11 +11,15 @@ import { cn } from '../../lib/cn';
  * carrying aria-expanded/aria-controls, so mouse, keyboard and screen readers all
  * operate the same one control. The chevron rotates; nothing else moves.
  *
- * Three rules to keep if this grows:
+ * Four rules to keep if this grows:
  *
  *  - `title` holds the label and `children` the CONTENT, unlike SectionHeader
  *    where children is the label. A collapsible has two payloads, so the label
  *    needed its own prop; overloading children would make both unreadable.
+ *  - The button fills the whole header ROW (flex-1, text-left), not just the
+ *    words. A section header reads as one strip of chrome — people click it
+ *    anywhere, not precisely on the label — and a label-sized target inside a
+ *    full-width row feels broken when the click lands beside it.
  *  - The trailing action (＋ add, Open editor →) is a SIBLING of the toggle,
  *    never its child: HTML forbids nested buttons, and pressing the action must
  *    not toggle the section it acts on.
@@ -70,10 +74,11 @@ export function CollapsibleSection({
 
   return (
     <div className={cn('flex flex-col', className)}>
-      <div className="flex min-h-4 w-full items-center">
+      <div className="flex min-h-4 w-full items-center gap-2">
         {/*
-          The disclosure itself. py/-my widens the pointer target past the
-          16px row without changing the row's height.
+          The disclosure itself — the whole row. py/-ml widens the pointer
+          target past the 16px row without changing the row's height; the
+          action sits outside the button as a sibling.
         */}
         <button
           type="button"
@@ -81,14 +86,14 @@ export function CollapsibleSection({
           aria-expanded={isOpen}
           aria-controls={contentId}
           className={cn(
-            'group -ml-1 flex cursor-pointer items-center gap-1.5 py-1 pl-1',
+            'group -ml-1 flex flex-1 cursor-pointer items-center gap-1.5 py-1 pl-1 text-left',
             'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-seq',
           )}
         >
           <span
             aria-hidden
             className={cn(
-              'font-mono text-[7px] leading-none text-tertiary transition-transform duration-150',
+              'font-mono text-[8px] leading-none text-tertiary transition-transform duration-150',
               'group-hover:text-secondary',
               isOpen && 'rotate-90',
             )}
@@ -98,14 +103,12 @@ export function CollapsibleSection({
           <span className="ds-section-label group-hover:text-secondary">{title}</span>
         </button>
 
-        <span className="flex-1" />
-
         {action && (
           <button
             type="button"
             onClick={onAction}
             className={cn(
-              '-my-1 cursor-pointer py-1 font-sans text-[10.5px] text-seq hover:underline',
+              '-my-1 shrink-0 cursor-pointer py-1 font-sans text-[10.5px] text-seq hover:underline',
               'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-seq',
             )}
           >
