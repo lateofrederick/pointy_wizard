@@ -382,6 +382,15 @@ export function usePointyDocument(initial: PointyDocument) {
     [addDefinition, selectEvent, setMode, setDoc],
   );
 
+  /**
+   * Rename the document — the workspace's own name, shown in the top bar and
+   * used by the first save. Goes through setDoc so the change is undoable and
+   * dirties the snapshot like any other edit.
+   */
+  const rename = useCallback((name: string) => {
+    setDoc((d) => ({ ...d, name }));
+  }, [setDoc]);
+
   return {
     doc,
     setDoc,
@@ -422,6 +431,7 @@ export function usePointyDocument(initial: PointyDocument) {
     upsertSource,
     deleteSource,
     setMode,
+    rename,
     setDefinitionSource,
     applyFix,
   };

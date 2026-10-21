@@ -460,6 +460,14 @@ Node ids (3:2) open in Figma via ?node-id=3-2
       and it renders from an effect so the server's "never seen" agrees
       with the first client paint. Test files that render it clear
       localStorage per test, same as the shell tests. 324 green, gate clean.
+[x] Follow-up — the workspace name is editable where it is read.
+      ui/EditableName: click the name (top bar and the pipeline inspector
+      header — one component, one document name), an input takes just the
+      name without the .pointy suffix; Enter or blur commits, Escape
+      cancels, whitespace is not a rename, and a typed ".pointy" is
+      stripped rather than doubled. store.rename goes through setDoc, so
+      the change is undoable, dirties the snapshot, and the first save
+      carries the new name. 327 green, gate clean.
 
 
 == UNDESIGNED — needs design before planning ==                              §11

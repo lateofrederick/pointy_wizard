@@ -5,7 +5,7 @@ import type { PointyDocumentStore } from '../../hooks/usePointyDocument';
 import type { Attr, Namespace, RegistrySource } from '../../types/pointy';
 import { emitExpr } from '../../lib/pointy/emit';
 import { cn } from '../../lib/cn';
-import { Button, Callout, Chip, CollapsibleSection, Field } from '../ui';
+import { Button, Callout, Chip, CollapsibleSection, EditableName, Field } from '../ui';
 import { DefinitionEditor } from '../editor/DefinitionEditor';
 import { ConnectionInspector } from './ConnectionInspector';
 import { ExpressionEditor } from './ExpressionEditor';
@@ -473,7 +473,13 @@ function PipelineInspector({ store }: { store: PointyDocumentStore }) {
   return (
     <aside className="flex w-full shrink-0 flex-col border-l border-edge bg-bg-surface">
       <div className="border-l-2 border-seq px-[14px] pt-4 pb-1">
-        <h2 className="font-mono text-[14px] font-medium text-primary">{doc.name}</h2>
+        {/* Same name the top bar edits — one document, one name, both places. */}
+        <EditableName
+          name={doc.name}
+          onRename={store.rename}
+          className="font-mono text-[14px] font-medium text-primary"
+          inputClassName="font-mono text-[14px] font-medium"
+        />
       </div>
       <p className="px-[14px] pb-3 font-mono text-[9.4px] text-tertiary">
         <span className="text-seq">PIPELINE</span> · {mode} · {doc.sources.length} sources

@@ -334,6 +334,62 @@ describe('Execution model legend (once only)', () => {
 });
 
 /**
+ * The workspace name edits where it is read: the top bar and the pipeline
+ * inspector header are the same EditableName bound to store.doc.name.
+ */
+describe('Workspace rename', () => {
+  /** Two EditableNames carry the name — scope to the bar or take them all. */
+  function barName() {
+    return within(screen.getByRole('banner')).getByRole('button', {
+      name: 'Rename my-etl-pipeline.pointy',
+    });
+  }
+
+  it('renames from the top bar with Enter, and both places follow', () => {
+    mount();
+    fireEvent.click(barName());
+
+    const input = screen.getByLabelText('Pipeline name');
+    fireEvent.change(input, { target: { value: 'nightly-etl' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    // Top bar and inspector header both carry the new name.
+    const labels = screen.getAllByRole('button', { name: 'Rename nightly-etl.pointy' });
+    expect(labels.length).toBe(2);
+  });
+
+  it('commits on blur and strips a typed .pointy instead of doubling it', () => {
+    mount();
+    fireEvent.click(barName());
+
+    const input = screen.getByLabelText('Pipeline name');
+    fireEvent.change(input, { target: { value: 'orders.pointy' } });
+    fireEvent.blur(input);
+
+    expect(
+      within(screen.getByRole('banner')).getByRole('button', { name: 'Rename orders.pointy' }),
+    ).toBeDefined();
+  });
+
+  it('Escape cancels, and a blank name is not a rename', () => {
+    mount();
+    fireEvent.click(barName());
+
+    const input = screen.getByLabelText('Pipeline name');
+    fireEvent.change(input, { target: { value: 'half-typed' } });
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(barName()).toBeDefined();
+
+    // Whitespace only: the press was not a rename, so nothing moves.
+    fireEvent.click(barName());
+    const blank = screen.getByLabelText('Pipeline name');
+    fireEvent.change(blank, { target: { value: '   ' } });
+    fireEvent.keyDown(blank, { key: 'Enter' });
+    expect(barName()).toBeDefined();
+  });
+});
+
+/**
  * Screen 12, built as an inert shell by product decision: there is no runner
  * service, so the run view may show the *absence* of a run and never an
  * invented one — no run number, no timings, no log lines (todo.txt, "WHY 11

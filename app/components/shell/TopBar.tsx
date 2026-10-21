@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import type { Diagnostic } from '../../lib/pointy';
 import { hasErrors, summarise } from '../../lib/pointy';
-import { Button, Chip, ThemeToggle } from '../ui';
+import { Button, Chip, EditableName, ThemeToggle } from '../ui';
 import { useSession } from '../../lib/session';
 import { runButtonLabel, type RunView } from '../../lib/runView';
 import { ZoomControl } from '../canvas/ZoomControl';
@@ -24,6 +24,7 @@ import { ZoomControl } from '../canvas/ZoomControl';
  */
 export function TopBar({
   filename,
+  onRename,
   diagnostics,
   dirty,
   saving,
@@ -37,6 +38,8 @@ export function TopBar({
   onRun,
 }: {
   filename: string;
+  /** Renames the document — the name is edited where it is read. */
+  onRename: (name: string) => void;
   diagnostics: Diagnostic[];
   dirty?: boolean;
   saving?: boolean;
@@ -71,9 +74,12 @@ export function TopBar({
         </span>
       </Link>
 
-      <span className="font-mono text-[13px] font-medium text-primary">
-        {filename}.pointy
-      </span>
+      <EditableName
+        name={filename}
+        onRename={onRename}
+        className="font-mono text-[13px] font-medium text-primary"
+        inputClassName="font-mono text-[13px] font-medium"
+      />
       {dirty && <span aria-label="Unsaved changes" className="text-[8px] text-seq">●</span>}
       <span className="font-sans text-[10.5px] text-tertiary">
         {saving

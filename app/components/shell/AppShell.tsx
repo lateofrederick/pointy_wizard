@@ -236,6 +236,7 @@ export function AppShell({
     <div className="flex h-screen w-full flex-col overflow-hidden bg-bg-base">
       <TopBar
         filename={store.doc.name}
+        onRename={store.rename}
         diagnostics={store.diagnostics}
         dirty={dirty}
         saving={saving}
