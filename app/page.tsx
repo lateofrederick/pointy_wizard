@@ -1,17 +1,26 @@
-'use client';
+import { currentUser } from './lib/server/auth';
+import { SessionProvider } from './lib/session';
+import { AppShell } from './components/shell/AppShell';
+import { emptyDocument } from './types/pointy';
 
-import { ReactFlowProvider } from 'reactflow';
-import PipelineEditor from './components/PipelineEditor';
+/**
+ * The landing page is the editor.
+ *
+ * No sign-in wall: you arrive on a working canvas and start drawing. An account
+ * is asked for at the first point it actually means something — saving, or
+ * reaching EventHub — and never before.
+ *
+ * The document starts empty, which renders screen 14's empty state. If the
+ * browser is holding a draft from a previous visit, AppShell restores it after
+ * mount; that cannot happen here because localStorage does not exist on the
+ * server.
+ */
+export default async function Home() {
+  const user = await currentUser();
 
-export default function Home() {
   return (
-    <ReactFlowProvider>
-      <main className="flex min-h-screen flex-col items-center p-4">
-        <h1 className="text-2xl font-bold mb-4">Pointy Pipeline Editor</h1>
-        <div className="w-full flex-1 border border-gray-200 rounded-lg">
-          <PipelineEditor />
-        </div>
-      </main>
-    </ReactFlowProvider>
+    <SessionProvider user={user}>
+      <AppShell initial={emptyDocument()} />
+    </SessionProvider>
   );
 }

@@ -1,26 +1,194 @@
 @import "tailwindcss";
 
+/* Class-based dark mode instead of prefers-color-scheme, so the user can
+   override the OS. The theme class is set on <html> by the inline script in
+   layout.tsx before first paint. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---------------------------------------------------------------------------
+   TOKENS
+
+   The designs are dark-first (Figma BiUnX2KnG4hiDwbubFh6ri). Light is an
+   accommodation, not an inversion: elevation has to be re-reasoned, and the
+   saturated operator colours have to be darkened or they vanish on white.
+
+   :root holds LIGHT. .dark holds DARK. The app defaults to dark.
+   Every component consumes semantic tokens only — never a raw hex — so the
+   whole UI swaps by toggling one class.
+--------------------------------------------------------------------------- */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: light;
+
+  /* Surfaces, sunken -> raised. A neutral white ramp, no beige: raised is
+     already white, so elevation separates by shadow and border instead. */
+  --bg-sunken:  #F2F2F4;
+  --bg-base:    #F7F7F8;
+  --bg-canvas:  #FFFFFF;
+  --bg-surface: #FFFFFF;
+  --bg-raised:  #FFFFFF;
+
+  /* One ink at four weights. Light needs higher alphas than dark — dark ink on
+     a light ground loses legibility faster than the reverse. */
+  --text-primary:   #14161B;
+  --text-secondary: rgb(20 22 27 / 0.68);
+  --text-tertiary:  rgb(20 22 27 / 0.50);
+  --text-disabled:  rgb(20 22 27 / 0.32);
+  --text-code:      #2A3442;
+  --text-comment:   #737780;
+
+  --border-subtle: rgb(20 22 27 / 0.09);
+  --border:        rgb(20 22 27 / 0.14);
+  --border-strong: rgb(20 22 27 / 0.22);
+
+  /* Operator + language colours. These carry meaning, so they are darkened for
+     light rather than dropped — #00E5FF on white is effectively invisible. */
+  --op-seq:        #007D93;   --op-seq-tint:        rgb(0 125 147 / 0.12);
+  --op-seq-hover:  #00667A;
+  --op-flow:       #5B3FE0;   --op-flow-tint:       rgb(91 63 224 / 0.12);
+  --syntax-keyword:#00875A;   --syntax-keyword-tint:rgb(0 135 90 / 0.12);
+  --syntax-template:#B87400;  --syntax-template-tint:rgb(184 116 0 / 0.12);
+  --syntax-retry:  #8A6200;   --syntax-retry-tint:  rgb(138 98 0 / 0.12);
+  --syntax-accent: #C2417E;   --syntax-accent-tint: rgb(194 65 126 / 0.12);
+
+  --status-red:    #D93025;   --status-red-tint:    rgb(217 48 37 / 0.12);
+  --status-yellow: #9A6A00;   --status-yellow-tint: rgb(154 106 0 / 0.12);
+  --status-green:  #1E8E3E;   --status-green-tint:  rgb(30 142 62 / 0.12);
+
+  --neutral-tint:  rgb(20 22 27 / 0.07);
+
+  --shadow-raised: 0 1px 2px rgb(20 22 27 / 0.06), 0 4px 12px rgb(20 22 27 / 0.10);
+  --shadow-modal:  0 20px 48px rgb(20 22 27 / 0.18);
+  /* Selection/error on the white canvas: the 2px seq border and the danger
+     border are the cue — a cyan/red glow on white reads as neon haze. */
+  --shadow-sel:  0 1px 2px rgb(20 22 27 / 0.06), 0 4px 12px rgb(20 22 27 / 0.10);
+  --shadow-err:  0 1px 2px rgb(20 22 27 / 0.06), 0 4px 12px rgb(217 48 37 / 0.12);
+  --scrim:         rgb(20 22 27 / 0.32);
 }
 
+.dark {
+  color-scheme: dark;
+
+  --bg-sunken:  #070910;
+  --bg-base:    #0A0C10;
+  --bg-canvas:  #0C0F15;
+  --bg-surface: #141820;
+  --bg-raised:  #1A1F29;
+
+  --text-primary:   #F5F2EC;
+  --text-secondary: rgb(245 242 236 / 0.65);
+  --text-tertiary:  rgb(245 242 236 / 0.40);
+  --text-disabled:  rgb(245 242 236 / 0.30);
+  --text-code:      #C8D6E8;
+  --text-comment:   #6E6C68;
+
+  --border-subtle: rgb(245 242 236 / 0.08);
+  --border:        rgb(245 242 236 / 0.10);
+  --border-strong: rgb(245 242 236 / 0.15);
+
+  --op-seq:        #00E5FF;   --op-seq-tint:        rgb(0 229 255 / 0.14);
+  --op-seq-hover:  #33E9FF;
+  --op-flow:       #7B61FF;   --op-flow-tint:       rgb(123 97 255 / 0.16);
+  --syntax-keyword:#00FF94;   --syntax-keyword-tint:rgb(0 255 148 / 0.14);
+  --syntax-template:#FFB830;  --syntax-template-tint:rgb(255 184 48 / 0.14);
+  --syntax-retry:  #FDCB6E;   --syntax-retry-tint:  rgb(253 203 110 / 0.14);
+  --syntax-accent: #FD9FCA;   --syntax-accent-tint: rgb(253 159 202 / 0.12);
+
+  --status-red:    #FF5F57;   --status-red-tint:    rgb(255 95 87 / 0.15);
+  --status-yellow: #FFBD2E;   --status-yellow-tint: rgb(255 189 46 / 0.15);
+  --status-green:  #28C840;   --status-green-tint:  rgb(40 200 64 / 0.15);
+
+  --neutral-tint:  rgb(245 242 236 / 0.10);
+
+  --shadow-raised: 0 4px 12px rgb(0 0 0 / 0.45);
+  --shadow-modal:  0 20px 48px rgb(0 0 0 / 0.70);
+  /* Figma screen 07: selected = raised shadow + cyan glow (r18, a0.30, sp2). */
+  --shadow-sel:    0 4px 12px rgb(0 0 0 / 0.45), 0 0 18px 2px rgb(0 229 255 / 0.30);
+  --shadow-err:    0 4px 12px rgb(0 0 0 / 0.45), 0 0 16px rgb(255 95 87 / 0.30);
+  --scrim:         rgb(7 9 16 / 0.62);
+}
+
+/* `inline` makes the generated utilities reference the custom property rather
+   than baking its value, which is what lets the class toggle work at runtime. */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-bg-sunken:  var(--bg-sunken);
+  --color-bg-base:    var(--bg-base);
+  --color-bg-canvas:  var(--bg-canvas);
+  --color-bg-surface: var(--bg-surface);
+  --color-bg-raised:  var(--bg-raised);
+
+  --color-primary:   var(--text-primary);
+  --color-secondary: var(--text-secondary);
+  --color-tertiary:  var(--text-tertiary);
+  --color-disabled:  var(--text-disabled);
+  --color-code:      var(--text-code);
+  --color-comment:   var(--text-comment);
+
+  --color-edge-subtle: var(--border-subtle);
+  --color-edge:        var(--border);
+  --color-edge-strong: var(--border-strong);
+
+  --color-seq:       var(--op-seq);
+  --color-seq-tint:  var(--op-seq-tint);
+  --color-seq-hover: var(--op-seq-hover);
+  --color-flow:      var(--op-flow);
+  --color-flow-tint: var(--op-flow-tint);
+
+  --color-keyword:       var(--syntax-keyword);
+  --color-keyword-tint:  var(--syntax-keyword-tint);
+  --color-template:      var(--syntax-template);
+  --color-template-tint: var(--syntax-template-tint);
+  --color-retry:         var(--syntax-retry);
+  --color-retry-tint:    var(--syntax-retry-tint);
+  --color-accent:        var(--syntax-accent);
+  --color-accent-tint:   var(--syntax-accent-tint);
+
+  --color-danger:       var(--status-red);
+  --color-danger-tint:  var(--status-red-tint);
+  --color-warn:         var(--status-yellow);
+  --color-warn-tint:    var(--status-yellow-tint);
+  --color-ok:           var(--status-green);
+  --color-ok-tint:      var(--status-green-tint);
+
+  --color-neutral-tint: var(--neutral-tint);
+  --color-scrim:        var(--scrim);
+
+  --font-sans: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-dm-mono), ui-monospace, SFMono-Regular, monospace;
+
+  --shadow-raised: var(--shadow-raised);
+  --shadow-modal:  var(--shadow-modal);
+  --shadow-sel:    var(--shadow-sel);
+  --shadow-err:    var(--shadow-err);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  height: 100%;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Section labels (DIRECTIVES, SCOPES REQUESTED …) are mono 9.4 / +0.7 tracking
+   everywhere in the designs. Typed uppercase, never text-transform, so the
+   string that ships is the string in the layer. */
+.ds-section-label {
+  font-family: var(--font-dm-mono), ui-monospace, monospace;
+  font-size: 9.4px;
+  font-weight: 500;
+  letter-spacing: 0.7px;
+  color: var(--text-tertiary);
+}
+
+/* Selected-wire glow, Figma screen 07 (r10, cyan a0.55). Owned here so the
+   light canvas stays flat: on white, a glowing wire reads as neon haze and
+   the thicker stroke already carries the selection. Wire.tsx sets
+   --wire-stroke so the glow follows the operator's colour. */
+.dark .pointy-wire--selected {
+  filter: drop-shadow(0 0 5px var(--wire-stroke));
 }

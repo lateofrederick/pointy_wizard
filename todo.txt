@@ -1,0 +1,585 @@
+POINTY WIZARD — UI MIGRATION
+Tracking the rewrite against the Figma designs. Detail lives in docs/ui-migration.md;
+this file is just the running state. Figma: BiUnX2KnG4hiDwbubFh6ri
+
+  [ ] open   [~] in progress   [x] done   [!] blocked   [-] dropped
+
+Section numbers (§) refer to docs/ui-migration.md.
+Node ids (3:2) open in Figma via ?node-id=3-2
+
+
+== PHASE 0 — DECISIONS ==  RESOLVED 2026-10-20 (chips/wire), rest open
+
+[x] Operator chips: STAY as labels above the wire. Not deleted.              §6
+      The click target for the operator popover is the WIRE (screen 07's
+      WirePopover ships on wire click) — decided with screen 07 as built.
+[x] Screen 07 (17:1675) — WirePopover built: sequential / streaming / 
+      parallel (dimmed with reason — || is a chain rewrite, not a relabel),
+      Delete connection via pure disconnect() with refusal rules.
+[ ] Keep violet for both |-> and || , or find a third hue for || ?           §3 §6
+      green is taken by branches, amber by templates.
+[ ] Sign off on chain-as-source-of-truth, reactflow-as-view.                 §4
+      everything in phase 2 depends on this.
+
+
+== PHASE 1 — FOUNDATION ==  DONE 2026-09-12
+
+[x] Replace app/globals.css with the @theme token block                      §3
+[x] Dual-theme tokens: :root = light, .dark = dark, app defaults to dark
+      superseded "drop the light theme" — light is now supported on request.
+      NOT an inversion: elevation is re-reasoned (light runs out of headroom at
+      white, so raised separates by shadow) and every saturated operator colour
+      is darkened or it vanishes (#00E5FF -> #007D93, #00FF94 -> #00875A, ...).
+[x] app/lib/theme.tsx — ThemeProvider, useTheme, pre-paint bootstrap script
+      three-way preference dark/light/system, persisted to localStorage.
+      inline <head> script sets the class before first paint to avoid a flash.
+[x] Swap Geist -> DM Sans / DM Mono in app/layout.tsx                        §3
+[x] Fix app/layout.tsx metadata — was "Create Next App"
+[x] Strip the <h1> and bordered box from app/page.tsx
+[x] app/lib/cn.ts — class join helper
+[x] ui/Chip.tsx          6 tones                       Figma 61:5568
+[x] ui/Button.tsx        primary/secondary/ghost + disabled   61:5589
+[x] ui/Toggle.tsx        on/off/locked                        61:5603
+[x] ui/Field.tsx         kind x state (see note)              61:5781
+[x] ui/SectionHeader.tsx none/add                             61:5856
+[x] ui/Callout.tsx       error/warning/info/success           61:5881
+[x] ui/ThemeToggle.tsx   dark/light/system
+[x] app/design/page.tsx — specimen page, the code-side mirror of 60:5535
+      this is where the exit criterion is checked. Run and compare both themes.
+[x] Unblock the build — it was already red at 58d086d: four lint errors in
+      CodeEditor / PipelineEditor / types / utils, plus one type error in
+      PipelineConfiguration surfaced by tightening `any` -> `unknown`.
+
+      NOTE Field: Figma has one property (text·select·stepper·focused·error)
+      because a second variant axis is expensive to author there. In code that
+      is two orthogonal things, so it is two props — kind x state. Do not
+      collapse them back to match Figma.
+
+      VERIFIED: npm run build green; /design renders; both palettes present in
+      the CSS bundle; all semantic utilities generated; DM Sans/Mono loading.
+      NOT verified visually against Figma — browser extension was unavailable.
+      Do that before calling phase 1 signed off.
+
+
+== PHASE 2 — MODEL + EMITTER (no UI) ==  DONE 2026-09-12
+
+[x] app/types/pointy.ts — Expr, Attr, EventRef, Chain, PointyDocument        §4
+      EventRef.id is per-OCCURRENCE, not per-event: under CFG the same event
+      appears many times and each is its own node. Identity is name+namespace.
+      Expr.literal gained `raw` so 30.0 does not round-trip as 30.
+[x] emit(doc): string — app/lib/pointy/emit.ts                               §5
+[x] lint(doc): Diagnostic[] — app/lib/pointy/lint.ts                         §5
+      unresolved-namespace / dag-reuse / deprecated-directive /
+      group-in-parallel / nested-meta-event / duplicate-descriptor /
+      too-many-paths / single-path-branch / retry-below-minimum /
+      missing-definition / undefined-variable
+[x] Diagnostic carries code + severity + message + rule + target + fix
+[x] chainToFlow(doc) -> { nodes, edges } — app/lib/pointy/flow.ts            §4
+      no reactflow import: the model stays testable and the canvas swappable.
+      entries()/exits() give groups several in/out points, which is what makes
+      a { } fan-in/fan-out draw correctly.
+[x] Document ops — app/lib/pointy/document.ts, all pure                      §4
+      setNodePosition writes layout ONLY (asserted by a test that emit() is
+      byte-identical after a drag). updateEvent / setWireOperator /
+      appendEvent / setDirective / pruneLayout.
+      Splice-into-chain, promote-to-branch and wrap-in-group are phase 4 —
+      they need the gestures designed first.
+[x] vitest added; `npm test`. 56 tests green.
+[x] Deprecation banners on app/utils/pointy.ts and app/types/pipeline.ts
+[~] Delete the two deprecated files — BLOCKED until phase 3
+      PipelineEditor still imports validatePointyCode, and the old components
+      still import the old types. Deleting now breaks the build for no gain.
+
+      TWO FINDINGS FROM THE FIXTURES — both need a Figma correction:
+
+      1. Screen 03's panel prefixes only RestApiExtract with `hub::` and emits
+         ClassifyIntent / GPT4Transform / SlackNotify bare, though all three
+         node cards carry a `hub` badge. A non-local event must carry its
+         namespace or it cannot resolve. The emitter prefixes all four; the
+         panels on screens 03 and 13 are stale and should be updated.
+
+      2. Screen 17's panel keeps `|-> MAP<Parse>[batch_size=50] -> Publish` on
+         one line. The emitter's rule — break before every top-level sequencing
+         operator — puts `-> Publish` on its own line. A deterministic rule
+         beats a hand-set break; the panel should be updated.
+
+      Fixtures cover screens 03, 13, 16, 17. Screens 09 and 15 are not yet
+      transcribed — their panels are worth adding as fixtures when convenient.
+
+
+== PHASE 3 — CANVAS ==  BUILT 2026-09-12, NOT VISUALLY SIGNED OFF
+
+[x] App shell: TopBar / Palette / Canvas / Inspector / OutputPanel            03
+[x] EventNode with the 6 state variants                        Figma 61:5722
+[x] Ports: left-in / right-out at y=38, top/bottom at centre                 §7
+      old top/bottom Handles gone with the old EventNode.
+[x] Branch node — one right-hand port per descriptor row (d0, d1, …)         §7
+[x] Concurrency group container (dashed, { } label tab)                      §7
+      DERIVED, not authored: its box is the bbox of its members plus padding,
+      recomputed when they move. Not draggable — membership is structural.
+[x] Custom edge: sequential / streaming / parallel — one Wire component       §6
+      chevrons are computed ANALYTICALLY from the bezier, not via
+      getPointAtLength as the doc suggested: no DOM measurement, no extra
+      render pass, deterministic in tests. lib/pointy/geometry.ts.
+[x] Arrowhead as a sibling <path>, not reactflow markerEnd                   §6
+[x] Edges behind nodes (reactflow default layering); groups at zIndex 0
+[x] PaletteTile + registry groups + blank tile                 Figma 61:5841
+[x] Output panel: gutter, syntax colouring, compile chip, problems list       03
+      lib/pointy/highlight.ts — a tokeniser, not a parser. Operators keep the
+      same colour in the source as on the wire.
+[x] Inspector — Properties tab, and the pipeline inspector when nothing is
+    selected (directives / variables / sources)                           03 13
+[x] Inspector — Definition tab, Monaco with light+dark Pointy themes          04
+[x] Empty state, three gesture hints                                         14
+[x] usePointyDocument replaces usePipeline; document is the single source
+[x] Deleted: PipelineEditor, EventNode, CodeEditor, MenuBar,
+    PipelineConfiguration, usePipeline, utils/pointy.ts, types/pipeline.ts
+[x] 90 tests green (geometry + highlight + a jsdom mount smoke test)
+
+    NOT DONE — VISUAL SIGN-OFF. The exit criterion is "screens 03, 04, 14
+    pixel-close" and that has NOT been checked: the Chrome extension was
+    unavailable both sessions and there is no headless browser installed.
+    What IS verified: build green, 90 tests, AppShell mounts without throwing,
+    top bar / palette / output panel / inspector all render with real emitted
+    source. The CANVAS ITSELF is unverified — jsdom has no layout, so reactflow
+    measures nothing and no node or wire is actually drawn in the tests.
+    Run `npm run dev` and compare against Figma before ticking this off.
+
+    KNOWN GAPS, deliberate (phase 4 owns the gestures):
+      - palette tiles do not drag onto the canvas yet
+      - no wire creation; onConnect is not wired
+      - selecting a wire does not change its operator (also blocked on the
+        chip decision in PHASE 0)
+      - attributes are read-only in the inspector
+      - "＋ add branch", "＋ New custom event", Export and Run are inert
+
+
+== PHASE 4 — AUTHORING ==  BUILT 2026-09-12, NOT VISUALLY SIGNED OFF
+
+    MODEL CHANGE this phase forced: PointyDocument gained `staged: EventRef[]`.
+    A .pointy file holds ONE chain, so an event dropped on the canvas but not
+    yet wired is not in the program. emit() ignores staged entirely; lint warns
+    "X is on the canvas but not connected, so it will not run"; the moment a
+    wire reaches it, it moves into the chain and leaves the list.
+
+[x] Drag from palette -> drop on canvas -> inline naming                     06
+      custom MIME so a stray text drop cannot spawn a node. Meta modes and the
+      blank tile drag too.
+[x] Wire creation; a new connection always defaults to sequential            §4
+[x] Change operator on an existing wire — VIA THE INSPECTOR, not a chip
+      screen 07 also puts an OPERATOR control in the inspector, so this ships
+      without pre-empting the PHASE 0 chip decision. The on-wire popover is
+      still blocked. Wires already have a 14px invisible click target.
+[x] WirePopover on wire click (screen 07) — BUILT 2026-10-20.
+      chips stay as labels (PHASE 0 resolved); popover anchors to the wire
+      midpoint, survives pan/zoom, ESC/outside-click closes; Delete = pure
+      disconnect() in edit.ts (events back to staged; fan/|| wires refused
+      with the rule). Operator change shares the inspector's setWireOperator.
+[x] Parallel row live, both directions — 2026-10-20.
+      || is a chain rewrite, not a relabel: edit.setParallel() finds the join
+      the same way flow draws it (exits x entries) and rewrites seq/pipe ->>
+      parallel or splices an adjacent pair back out. emit wraps non-atomic
+      members in parens; parse reads them back — round-trip holds (tested).
+      A { } group inside a pair trips lint's group-in-parallel, reported not
+      clamped, same as a low retry. Popover AND inspector both offer it now.
+[x] Branch promotion — a second wire off one node promotes it                08 09
+[x] Branch commit — 0 success / 1 failure auto-assigned by position          09
+      a third wire takes the next free descriptor; capped at 10.
+[x] Meta events draggable from the palette                                   15
+[x] Meta-level vs template-level attributes shown separately in the inspector 15
+[x] Context menu with the enforced rules                                     17
+      "Wrap in group" dims WITH THE REASON when the event is in a || pair.
+      A rule the canvas enforces should say why, not just fail.
+[x] Expression editor — literals, $ref, $env, ?? chains, one ternary         18
+      lib is app/components/shell/ExpressionEditor.tsx; parseExpression is
+      unit-tested against all four things the grammar does NOT have.
+[x] Attribute add / edit / remove, values through the expression editor
+[x] Retry stepper wired; a value below 2 goes to lint rather than being
+    silently clamped — the user should see the rule, not have it applied
+[x] 153 tests green (edit surgery, expression grammar, authoring end-to-end)
+
+    NOT DONE:
+    [x] Mid-drag branch PREVIEW (screen 08) — BUILT 2026-10-20.
+        PendingConnectionLine: dashed wire in --op-seq, 22px snap ring,
+        "Release to add branch N (name)" pill; gated on the same
+        hasSuccessor predicate connect() promotes with. onConnectStart/End
+        tracks it; stock line kept for non-promoting drags.
+    [ ] Wrap in group / Convert to branch / Duplicate / Add retry… from the
+        context menu are drawn but inert — only Delete is wired.
+    [ ] "＋ add branch" on the branch node is inert
+    [ ] Undo/redo — the document ops are pure and return new documents, so the
+        history stack is cheap, but nothing holds it yet
+
+    STILL NOT VISUALLY VERIFIED. Same as phase 3: no browser available. Drag
+    and drop, connection dragging and the context menu are exactly the things
+    jsdom cannot exercise. Run `npm run dev` and try them before sign-off.
+
+
+== PHASE 5 — BEYOND ONE FILE ==
+
+[x] Sign in / Sign up                                                     01 02
+[x] Pipeline list — where sign-in actually lands                             20
+[x] Persistence beyond localStorage (accounts imply a server)
+[x] parse(source) -> PointyDocument  — the larger half of §5
+[x] Import .pointy wired to the button on screen 20
+[x] EventHub grant — scopes, and what the grant CANNOT do                    19
+[x] Publish to EventHub — inert UI shell, no registry behind it            11
+[x] Run results — inert UI shell (RUN OUTPUT view, Re-run state)            12
+      no fabricated logs/timings; every action explains the missing runner;
+      ← Source returns to LIVE POINTY OUTPUT. lib/runView.ts.
+[x] Pipeline settings — directives, variables, sources                       13
+
+  WHAT PHASE 5 BUILT
+
+  parse.ts — tokeniser + recursive-descent parser, PointyParseError carries
+  line/column. tryParse() never throws. emit(parse(emit(doc))) === emit(doc)
+  holds for all four fixtures.
+
+  Server: .data/pointy.json store (db.ts), scrypt + HMAC-signed cookie session
+  (auth.ts). Routes: /api/auth/{signup,signin,session}, /api/pipelines,
+  /api/pipelines/[id], /api/grants.
+
+  Pages: /signin, /signup (one AuthScreen, two copies), /pipelines (list),
+  /pipelines/[id] (editor, loads and saves), /sandbox (screen 03's document,
+  no account, nothing persists), / redirects on session.
+
+  The stored form is .pointy SOURCE, not serialised JSON. PUT refuses to save
+  source that will not parse — a save that corrupts a pipeline is worse than a
+  save that fails. Loading parses it back, so save/load continuously proves
+  emit and parse agree.
+
+  Screen 13: variables and sources are now editable (setVariable,
+  removeVariable, setSource, removeSource in document.ts, 11 tests). Adding a
+  hub source is the fix the unresolved-namespace diagnostic asks for, and the
+  test asserts that it silences it. A rename does NOT rewrite $references —
+  lint reports the dangling one instead.
+
+  Screen 19: grant is stored per user, per package, revocable. `read` is forced
+  on server-side, not just drawn locked.
+
+  DEPARTURES FROM THE DESIGN, all deliberate, all because the thing behind
+  them does not exist yet:
+
+  - Screen 20's LAST RUN column is not drawn. No run history (screen 12); a
+    column empty on every row teaches nothing.
+  - Screen 20's tabs filter by valid/warnings/errors, not Drafts/Published.
+    Publishing arrives with screen 11.
+  - Screens 01/02: the GitHub and Google buttons say single sign-on is not
+    wired up rather than failing silently. "Forgot password?" says the same.
+  - Screen 19's AUTHORISE AS lists organisations; there are none in the model,
+    so it names the signed-in account and says so. It is opened from the
+    pipeline's SOURCES section rather than from publish.
+  - Screen 13's org switcher in the rail shows the signed-in user.
+  - Top bar says "Export .pointy", not "Export .pty" — the extension is
+    .pointy everywhere else, including the frame's own file name.
+
+  NO SIGN-IN WALL  (changed after phase 5, on request)
+
+  The editor is the landing page. `/` opens a working canvas for anyone, and
+  an account is asked for only at the point it means something:
+
+    /                  editor, signed out or in. Empty document -> screen 14.
+    /sandbox           editor on screen 03's document. keepDraft={false}.
+    /pipelines         needs an account — it is *your* pipelines
+    /pipelines/[id]    needs an account — a saved pipeline belongs to someone
+    /signin /signup    redirect to ?next= when already signed in
+
+  Gated: saving, and anything touching EventHub. Everything else is open.
+
+  Save has three shapes — PUT when the pipeline exists; POST then move to its
+  own URL when signed in with no id; sign in first when signed out. The
+  signed-out draft is mirrored to localStorage (key `pw-draft`) as .pointy
+  SOURCE plus layout/definitions/sources — the same shape the server stores,
+  so restoring it exercises the same parse round trip a load does. A draft
+  that will not parse is discarded, not half-restored. Save clears it.
+
+  `next=` is validated by safeNext() in lib/routes.ts: relative paths only,
+  `//host` rejected. Verified — ?next=https://evil.example falls back.
+
+  lib/routes.ts exists because a server component must be able to CALL
+  signInHref to redirect, and nothing exported from a 'use client' module can
+  be called from the server. That mistake cost a 500 on /pipelines.
+
+  THEME ON THE AUTH SCREENS
+
+  /signin and /signup have no theme toggle and follow the OS. Theme is a
+  per-account setting and there is no account yet. SYSTEM_THEME_ROUTES in
+  lib/theme.tsx; the path is checked in the pre-paint bootstrap script too, so
+  there is no flash of the stored theme. The stored preference is untouched.
+
+  THE DEAD END  (found when the user reported "most things don't work")
+
+  connect() bailed on `!doc.chain`, and stageEvent() always staged. An empty
+  document therefore had no event in the chain, and connect() only ever
+  extends from an event already in the chain — so a NEW PIPELINE COULD NEVER
+  ACQUIRE ITS FIRST EVENT. Every gesture after that appeared broken because
+  everything downstream depends on the chain existing.
+
+  Compounding it: store.notice was never rendered anywhere. Every refusal —
+  and the model refuses a lot, on purpose, with the Pointy rule attached —
+  was silent. Silent refusal is indistinguishable from a broken button.
+
+  Fixed:
+    - stageEvent: the FIRST event becomes the chain. One event is a valid
+      Pointy program; staging it was a trap.
+    - connect: a wire between two staged events seeds an empty chain.
+    - connect: a backwards wire now says so, naming the direction, instead of
+      "Connect the source into the pipeline first."
+    - Notice component over the canvas; 7s, dismissable.
+
+  NOW WIRED (were drawn but inert)
+
+  [x] ＋ New custom event — stages a blank event, stepped so presses stack
+  [x] Convert to branch — existing successor to 0, new OnFailure to 1;
+      refuses an event with no successor (a one-path branch is invalid)
+  [x] Wrap in group — refuses a || member and refuses double-wrapping
+  [x] Add retry (×2) — 2 is the minimum; the inspector stepper takes it on
+  [x] Duplicate — staged copy, new id, definition NOT shared
+  [x] Add event definition — writes a Python stub and links it; refuses a
+      registry event because its Python lives with the package
+  [x] ＋ add branch on the branch node — next free descriptor, capped at 10
+  [x] ⋮ on a node card — opens the same menu as right-click
+  [x] ↓ Download in the output panel
+  [x] Undo / redo — ⌘Z, ⇧⌘Z, ⌘Y. Node drags are excluded from the history
+      (setDocQuietly), so undo steps through the program, not every nudge.
+      Ignored while typing in a field.
+
+  STILL INERT:  ▶ Run pipeline (no runtime — screen 12).
+
+  21 new tests in structural.test.ts cover the empty-document path and every
+  context-menu operation including each refusal.
+
+  WHY 11 AND 12 ARE NOT REAL  (both are inert shells)
+
+  Screen 11 publishes to a registry and screen 12 shows results from a runner.
+  Neither service exists, and neither can be made real the way the grant could.
+  Building them as working screens would mean inventing product semantics (what
+  a "published" pipeline is, who can see it) or drawing screens filled with
+  fabricated data. So both exist as UI shells that are explicit about it:
+
+  - Screen 11: PublishModal, opened from the top bar's "Publish to EventHub".
+    Everything derived from the document is derived for real — the file name,
+    the emitted source, the address that would be claimed. Publish states
+    plainly that no registry exists and nothing was published; the footer
+    never claims a contract is satisfied or a version is unused, because only
+    a registry knows either.
+  - Screen 12: the RUN OUTPUT view of the output panel (lib/runView.ts).
+
+
+== DEFINITION EDITOR — linting the Python against the Volnux contract ==  DONE 2026-10-20
+
+[x] app/lib/definition/lintDefinition.ts — a line-scanner, not a parser.
+      Rules mirror what the framework itself enforces, so a definition that
+      passes will import cleanly on the platform:
+        py-legacy-pointy-import  `from pointy` -> the package is volnux
+        py-missing-volnux-import event defined, no volnux binding
+        py-no-event              no EventBase subclass and no @event fn
+        py-missing-process       EventBase subclass with no process()
+        py-process-needs-self    first parameter is not self (framework TypeError)
+        py-process-not-async     class-based plain def (docs: must be async)
+        py-forbidden-init        __init__ override (EventBase raises)
+        py-goto-descriptor-range literal descriptor outside 0-9
+        py-goto-arity            goto without (descriptor, ok, result)
+        py-name-mismatch         class/fn identity != the pipeline event's name
+        py-retry-policy-key      unknown key in a retry_policy dict
+        py-unknown-attribute     class attr not in EventBase's set (+ suggestion)
+        py-multiple-events       more than one event in the file
+        py-return-annotation     annotated, but not Tuple[bool, Any]
+      Identity is resolved the way the framework resolves it: class name, or
+      `name = "..."`, or @event(name="..."). The check runs only when the
+      definition is linked to an event (eventName passed).
+[x] Monaco markers in DefinitionEditor — live squiggles + a ✕n / ⚠m chip in
+      the editor header. Markers are set under the owner `pointy-definition`
+      and cleared on unmount.
+[x] lintDefinitions(doc) bridges into the document diagnostics (usePointyDocument
+      and the /api/pipelines summary) — a broken definition is an error in the
+      problems list, blocks the publish gate, and shows as a callout in the
+      Properties tab, same as a structural problem.
+[x] sampleDocument: `from pointy` -> `from volnux`; ThreadPoolExecutor import
+      replaced by `executor = "thread"` (the string the registry maps).
+[x] attachDefinition stub: async process(*args, **kwargs); docstring says
+      descriptors 0-9, not 2-9 (0 and 1 are legal — they are just the first
+      two paths).
+[x] 28 tests in lib/definition/__tests__/lintDefinition.test.ts.
+      Full gate green: tsc / 310 tests / eslint / build.
+
+
+== INSPECTOR — expand/collapse + the EVENT DEFINITION section Figma had ==  DONE 2026-10-20
+
+  "I should be able to expand the event details / definition section by using
+  the mouse pointer." The panel's sections were static headers; they now open
+  and close, and the Python behind an event is finally summarised where the
+  event is described (Figma screen 03 had it — Sec/EVENT DEFINITION 14:42,
+  DefinitionCard 14:46, status row 14:54 — and it was never built).
+
+[x] app/components/ui/CollapsibleSection.tsx — the primitive. The label is a
+      button carrying aria-expanded/aria-controls; the trailing action (＋ add,
+      Open editor →) is a SIBLING of it (nested buttons are illegal, and the
+      action must not toggle the section it acts on). Children stay mounted
+      while collapsed — the `hidden` attribute with no display class to beat
+      it — so collapsing the editor keeps its cursor and a half-typed form.
+      Controlled (Inspector owns the state) with an uncontrolled fallback.
+[x] Inspector: open-state lives in the panel, not the sections, so the choice
+      survives switching events and tabs. IDENTITY / EXECUTION / ATTRIBUTES /
+      META-LEVEL ATTRIBUTES collapsed on the pointer; ＋ add expands the
+      ATTRIBUTES section if it was closed. Diagnostic callouts stay outside
+      the collapsibles — a problem you can hide is a problem you never fix.
+[x] Properties tab: EVENT DEFINITION section — preview card ({} chip,
+      filename, line count, scrollable source) and status row, both paths
+      (card, "Open editor →") open the Definition tab; for a local event with
+      no definition yet the action is "Add event definition →".
+[x] Definition tab: SOURCE FILE collapsed around the editor (fills the panel
+      only while open) + the status row below it, so the editor can be tucked
+      away without leaving the file's identity behind.
+[x] 8 tests (5 primitive, 3 integration through the fix-driven selection
+      path — the canvas cannot select in jsdom). 319 green.
+      Full gate green: tsc / 319 tests / eslint / build.
+[x] Follow-up the same day — "I still can't expand the right section":
+      the toggle button only spanned the label, so clicking the middle of a
+      header row hit a dead spacer. The button now fills the whole row
+      (flex-1, text-left); chevron 7px -> 8px. And only the event inspector
+      had been converted — DIRECTIVES / VARIABLES / SOURCES (pipeline view)
+      and ENDPOINTS / OPERATOR / EMITS (wire view) are collapsible now too.
+      320 green, gate clean.
+[x] Follow-up — what "expand the divider" actually meant: a resizable
+      inspector, not collapsible headers. app/components/ui/ResizeHandle.tsx
+      straddles the panel's left edge (6px strip, hover/drag tint); drag
+      takes the width (window-level listeners, no pointer-capture API), it
+      clamps 280-640, arrows/Shift+arrows adjust, Home and double-click
+      reset to 340. role="separator" with valuenow/min/max so the keyboard
+      path is a real one. AppShell owns the width (fixes the wrapper, all
+      three inspector asides are w-full now).
+      Palette: collapsed to a rail and back. The toggle started as an 8px
+      ◀ glyph — punctuation, not a control — and became a 22px bordered
+      square with three horizontal lines (the standard hamburger); the rail
+      widened to 36px to seat it. The control is always visible either way.
+      322 green, gate clean.
+[x] Follow-up — EXECUTION MODEL legend is once-only onboarding: the first
+      time it shows, `pw-execution-model-seen` is written (on sight, not on
+      close — it never comes back either way), ✕ ends it for the session,
+      and it renders from an effect so the server's "never seen" agrees
+      with the first client paint. Test files that render it clear
+      localStorage per test, same as the shell tests. 324 green, gate clean.
+[x] Follow-up — the workspace name is editable where it is read.
+      ui/EditableName: click the name (top bar and the pipeline inspector
+      header — one component, one document name), an input takes just the
+      name without the .pointy suffix; Enter or blur commits, Escape
+      cancels, whitespace is not a rename, and a typed ".pointy" is
+      stripped rather than doubled. store.rename goes through setDoc, so
+      the change is undoable, dirties the snapshot, and the first save
+      carries the new name. 327 green, gate clean.
+[x] Follow-up — event definitions survive a refresh (browser cache until
+      the backend round-trips them). THE ROOT CAUSE: a definition is two
+      facts — the Python map AND ref.definitionId — and the link exists
+      NOWHERE in the round-trip: .pointy has no syntax for it (parse.ts
+      returns definitions: {}, emit never writes it), the draft carried the
+      map but not the links, and the server stores the map but a reload
+      re-parses source. Every refresh looked like "the definition is lost".
+      lib/definitionCache.ts keeps both facts in localStorage, scoped
+      pw-defs-<pipelineId|draft>: applied once on load (cache wins per key;
+      dangling links refused), rewritten debounced with an unmount flush
+      (sign-in redirect, save-and-navigate) plus a beforeunload flush (a
+      real refresh runs no React cleanups). Writes stay off until the
+      merge has applied, or the first write would clobber the cache with
+      the link-less loaded doc. Sandbox (keepDraft=false) stays memory-
+      only; shell.test's mount() now threads keepDraft (default off).
+      THE REAL FIX, still to design: express the link in the language or
+      as a server column, then delete this module. 334 green, gate clean.
+[x] Follow-up — the definition store moved to IndexedDB, and workspaces
+      are keyed to stay apart. Same job (bridge the missing definition→file
+      link until the backend round-trips it), better vehicle: one database
+      ('pointy-editor'), one store ('definitions'), one record per workspace
+      — key 'pipeline:<id>' for a saved pipeline, 'draft' for the unsaved
+      editor slot (the slot pw-draft itself uses). Explicit prefixes, so a
+      pipeline id can never collide with the draft; NOT user-scoped, because
+      the draft is browser-global and scoping definitions by user while the
+      draft is not would desync the two. IndexedDB's shape (named stores,
+      keyed records, async) points at the future backend without a caller
+      rewrite; localStorage stays for the draft and the once-only flags.
+      Three honest design points, all in code comments: (1) the restore is
+      async now, so writes stay gated until the read settles and a scope
+      change cancels the in-flight read — a slow pipeline:A read cannot
+      land on pipeline:B; (2) IndexedDB cannot guarantee an unload write the
+      way localStorage's sync flush could, so AppShell flushes on pagehide
+      AND visibilitychange→hidden (the hook that still has a live event
+      loop) — residual loss window is one debounce period, same as the
+      draft's own write; (3) first save of a draft now MOVES the snapshot to
+      the pipeline's scope before navigating — previously the new mount read
+      an empty pipeline scope and the links died on that very jump (a real
+      bug in the localStorage version, pinned by a test). Tests: fake-
+      indexeddb for the real transaction semantics; scope isolation, raw
+      corrupt-record defence, delete-one-vs-clear-all, the three flush
+      paths, and the save migration all covered. 343 green, gate clean.
+[x] Follow-up — the output panel keeps its height whether or not problems
+      show. The dark strip: OutputPanel's section hugged its content inside
+      a fixed 280px wrapper, so when the PROBLEMS column cleared the panel
+      shrank and the page background showed under the slot — and collapsing
+      did the same thing on purpose, revealing a dark strip rather than
+      reclaiming space. The section is now h-full (content never drives its
+      height; the columns scroll), and the collapse state moved into
+      AppShell, which owns the slot: open = 280px, collapsed = the 42px
+      header, the space genuinely returning to the canvas. The toggle
+      button got an aria-label (Collapse/Expand output panel) — it was an
+      unnamed ▼. 335 green, gate clean.
+[x] Follow-up — ROOT CAUSE of "definitions vanish on refresh": links were
+      keyed by EVENT ID, and ids do not survive a parse. newEventId() mints
+      a fresh timestamp id on every parse of the same source (parse.ts calls
+      it per occurrence), so the id the link was cached against is gone by
+      the time the page reloads — the name-keyed definitions map survived
+      (that half looked fine) while every link silently failed to match, and
+      the write-back that followed then ERASED links from the store. Found
+      by reproducing in a real browser with playwright (jsdom +
+      fake-indexeddb cannot catch it — they never re-parse): IDB after click
+      held {emvi5…: do_work.py}, after reload the record read links: {} with
+      the file still there. FIXED by keying links on `namespace::name` — the
+      identity flow.ts already uses for CFG-reuse marking, and the identity
+      the Python filename derives from (snake(ref.name)): two occurrences of
+      one event converge on one link, which matches file-per-name reality.
+      Regression test runs the REAL round trip (attachDefinition → emit →
+      tryParse asserts brand-new ids → apply restores by name); verified
+      live: reload keeps {"local::DoWork": "do_work.py"}, fix button stays
+      gone. KNOWN COST, documented in the module: renaming an event changes
+      its key, so a rename loses the CACHED link on the next reload (the
+      file stays; the fix button reappears and reattaches). NOT fixed here,
+      same root, flagged in §11: layout is id-keyed too, so node positions
+      reset to auto-layout on every reload — changing id minting would
+      ripple through layout/selection/reactflow keys and belongs with the
+      language-round-trip design. 345 green, gate clean.
+
+
+== UNDESIGNED — needs design before planning ==                              §11
+
+[ ] Definition links in the round-trip. ref.definitionId exists only in
+    memory: .pointy has no syntax for it and the server has no column, so
+    every reload re-parses a link-less doc. lib/definitionCache.ts bridges
+    this in the browser (localStorage 2026-10-20, IndexedDB + name-keyed
+    links 2026-10-21) — design the language or server fix, then delete
+    that module. The same design must fix STABLE EVENT IDENTITY: ids are
+    minted fresh per parse, so anything id-keyed dies at the boundary —
+    layout (node positions reset to auto-layout on every reload, today) and
+    selection included. Name-keying the cache was the careful scoped move;
+    id minting is a language-level decision (occurrence ids distinguish
+    CFG-reuse nodes, duplicateEvent clones names on purpose) — do not
+    change it casually.
+[ ] Browsing EventHub: results, component detail, versions, install
+[ ] Run history: list of runs, per-event logs, traceback drill-down
+[ ] Import flow: paste/upload -> parse -> canvas
+[ ] Undo/redo, multi-select, copy/paste on the canvas
+
+
+== TRAPS — re-read before touching the model ==                              §12
+
+  Descriptors are ints 0-9 BY DESIGN. process() returns (bool, result) — the
+  second value is the result, not a descriptor. Explicit branching is
+  self.goto(n, ok, result). An earlier design pass got this backwards.
+
+  @mode: "CFG" is the DEFAULT and is how loops/retries/handoffs are expressed.
+  The language has no loop keyword. DAG is the strict opt-in.
+
+  |-> is a STREAMING pipe — memory-bounded, downstream starts before upstream
+  ends. Not "pipe the result".
+
+  local:: is implicit and must never be written into the output.
+
+  Node position carries NO meaning. If you are sorting nodes by x to build the
+  chain, stop — that is the bug §4 exists to prevent.
