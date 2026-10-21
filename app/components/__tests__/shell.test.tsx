@@ -52,9 +52,13 @@ function mount({
 }
 
 // `globals` is off, so testing-library's automatic cleanup is not registered.
+// localStorage too: mount() writes real flags (the legend's once-only marker,
+// the draft), and a test that asserts first-run behaviour must not inherit
+// the previous test's history.
 afterEach(() => {
   cleanup();
   push.mockClear();
+  localStorage.clear();
 });
 
 /**
@@ -296,6 +300,36 @@ describe('Shell layout controls', () => {
     expect(
       screen.queryByRole('button', { name: 'Collapse registry panel' }),
     ).toBeDefined();
+  });
+});
+
+/**
+ * The execution-model legend is once-only onboarding: its one appearance is
+ * booked the moment it first shows (close or no close), and ✕ ends it early.
+ * A remount stands in for a fresh session.
+ */
+describe('Execution model legend (once only)', () => {
+  it('appears on first sight, closes with ✕, and never returns', () => {
+    const first = mount();
+    expect(screen.getByText('EXECUTION MODEL')).toBeDefined();
+    // The flag is written on sight, not on close.
+    expect(localStorage.getItem('pw-execution-model-seen')).toBe('1');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close execution model card' }));
+    expect(screen.queryByText('EXECUTION MODEL')).toBeNull();
+
+    first.unmount();
+    mount();
+    expect(screen.queryByText('EXECUTION MODEL')).toBeNull();
+  });
+
+  it('is gone forever even for someone who never pressed ✕', () => {
+    const first = mount();
+    expect(screen.getByText('EXECUTION MODEL')).toBeDefined();
+    first.unmount();
+
+    mount();
+    expect(screen.queryByText('EXECUTION MODEL')).toBeNull();
   });
 });
 

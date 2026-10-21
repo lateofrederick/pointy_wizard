@@ -16,7 +16,13 @@ import { OperatorLegend } from '../OperatorLegend';
  * file gets its own module registry, so nothing leaks sideways into the shell
  * smoke tests.
  */
-afterEach(cleanup);
+// cleanup, plus localStorage: OperatorLegend books its one appearance in
+// localStorage the moment it shows, so a fresh render in the next test would
+// be invisible unless each test starts from "never seen".
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+});
 
 describe('ZoomControl', () => {
   it('starts at the canvas default viewport — screen 03 draws 92%', () => {

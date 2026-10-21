@@ -449,9 +449,17 @@ Node ids (3:2) open in Figma via ?node-id=3-2
       reset to 340. role="separator" with valuenow/min/max so the keyboard
       path is a real one. AppShell owns the width (fixes the wrapper, all
       three inspector asides are w-full now).
-      Palette: ◀ in the registry header collapses it to a 28px rail whose
-      ▶ brings it back — the control is always visible either way.
+      Palette: collapsed to a rail and back. The toggle started as an 8px
+      ◀ glyph — punctuation, not a control — and became a 22px bordered
+      square with three horizontal lines (the standard hamburger); the rail
+      widened to 36px to seat it. The control is always visible either way.
       322 green, gate clean.
+[x] Follow-up — EXECUTION MODEL legend is once-only onboarding: the first
+      time it shows, `pw-execution-model-seen` is written (on sight, not on
+      close — it never comes back either way), ✕ ends it for the session,
+      and it renders from an effect so the server's "never seen" agrees
+      with the first client paint. Test files that render it clear
+      localStorage per test, same as the shell tests. 324 green, gate clean.
 
 
 == UNDESIGNED — needs design before planning ==                              §11

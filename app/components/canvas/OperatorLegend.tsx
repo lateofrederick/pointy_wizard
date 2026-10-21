@@ -1,5 +1,8 @@
 'use client';
 
+import { useEffect, useState } from 'react';
+import { cn } from '../../lib/cn';
+
 /**
  * OperatorLegend — Figma screen 03, floating over the canvas's bottom-left.
  *
@@ -10,7 +13,19 @@
  * parallel actually runs on. The glyphs are the wire forms at reduced scale —
  * solid strand, chevroned strand, split lanes — not the text operators alone,
  * because the form is half the meaning.
+ *
+ * It is ONCE-ONLY onboarding, not permanent chrome: the moment it is first
+ * shown its flag is written, so it never returns — close or no close. The ✕
+ * is for "not now", the flag is for "not again". Without the flag the card
+ * would fight the canvas it floats over for every user who has already
+ * learned the language.
+ *
+ * Shown from an effect, never from render: the server cannot know the flag,
+ * so rendering it optimistically would either flash the card for users who
+ * dismissed it or desync the first client paint.
  */
+const SEEN_KEY = 'pw-execution-model-seen';
+
 const ROWS = [
   {
     op: '->',
@@ -83,9 +98,41 @@ const FOOTNOTE = [
 ] as const;
 
 export function OperatorLegend() {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(SEEN_KEY) !== null) return;
+      // First sight IS the one appearance — flag it now, not on close, so the
+      // card never comes back even to someone who never presses ✕.
+      localStorage.setItem(SEEN_KEY, '1');
+      setVisible(true);
+    } catch {
+      // Private mode keeps no memory; the card simply shows each session.
+      setVisible(true);
+    }
+  }, []);
+
+  if (!visible) return null;
+
   return (
     <aside className="absolute bottom-6 left-5 z-10 rounded-[8px] border border-edge bg-bg-surface px-4 py-[14px]">
-      <h2 className="ds-section-label">EXECUTION MODEL</h2>
+      <div className="flex items-center">
+        <h2 className="ds-section-label">EXECUTION MODEL</h2>
+        <span className="flex-1" />
+        <button
+          type="button"
+          onClick={() => setVisible(false)}
+          aria-label="Close execution model card"
+          title="Close — this card will not appear again"
+          className={cn(
+            '-mt-px -mr-1 cursor-pointer px-1 font-sans text-[12px] text-tertiary',
+            'hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-seq',
+          )}
+        >
+          ✕
+        </button>
+      </div>
 
       <div className="mt-[11px] flex flex-col gap-[7px]">
         {ROWS.map((row) => (
