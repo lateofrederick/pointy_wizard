@@ -441,6 +441,17 @@ Node ids (3:2) open in Figma via ?node-id=3-2
       had been converted — DIRECTIVES / VARIABLES / SOURCES (pipeline view)
       and ENDPOINTS / OPERATOR / EMITS (wire view) are collapsible now too.
       320 green, gate clean.
+[x] Follow-up — what "expand the divider" actually meant: a resizable
+      inspector, not collapsible headers. app/components/ui/ResizeHandle.tsx
+      straddles the panel's left edge (6px strip, hover/drag tint); drag
+      takes the width (window-level listeners, no pointer-capture API), it
+      clamps 280-640, arrows/Shift+arrows adjust, Home and double-click
+      reset to 340. role="separator" with valuenow/min/max so the keyboard
+      path is a real one. AppShell owns the width (fixes the wrapper, all
+      three inspector asides are w-full now).
+      Palette: ◀ in the registry header collapses it to a 28px rail whose
+      ▶ brings it back — the control is always visible either way.
+      322 green, gate clean.
 
 
 == UNDESIGNED — needs design before planning ==                              §11

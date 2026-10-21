@@ -247,6 +247,59 @@ describe('Collapsible inspector sections', () => {
 });
 
 /**
+ * The shell's two layout controls: the divider that widens the inspector
+ * (drag, keyboard, clamped, reset) and the button that tucks the registry
+ * palette away. Both are pointer-driven chrome, which is exactly the kind of
+ * thing a green build does not prove.
+ */
+describe('Shell layout controls', () => {
+  it('the inspector divider drags, clamps, takes arrows and resets with Home', () => {
+    mount();
+    const sep = screen.getByRole('separator', { name: 'Resize inspector' });
+    const panel = sep.parentElement as HTMLElement;
+    expect(panel.style.width).toBe('340px');
+
+    // Keyboard first, from the default: ← widens, → narrows again.
+    fireEvent.keyDown(sep, { key: 'ArrowLeft' });
+    expect(sep.getAttribute('aria-valuenow')).toBe('356');
+    fireEvent.keyDown(sep, { key: 'ArrowRight' });
+    expect(sep.getAttribute('aria-valuenow')).toBe('340');
+
+    // Drag 80px left — the panel's left edge follows, so the width grows.
+    fireEvent.pointerDown(sep, { clientX: 700 });
+    fireEvent.pointerMove(window, { clientX: 620 });
+    expect(panel.style.width).toBe('420px');
+    fireEvent.pointerUp(window);
+
+    // Clamped at the ceiling however far the pointer travels.
+    fireEvent.pointerDown(sep, { clientX: 700 });
+    fireEvent.pointerMove(window, { clientX: 0 });
+    expect(panel.style.width).toBe('640px');
+    fireEvent.pointerUp(window);
+
+    // Home is the escape hatch back to the designed width.
+    fireEvent.keyDown(sep, { key: 'Home' });
+    expect(panel.style.width).toBe('340px');
+    expect(sep.getAttribute('aria-valuenow')).toBe('340');
+  });
+
+  it('the registry palette collapses to a rail and comes back', () => {
+    mount();
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse registry panel' }));
+
+    // The palette is gone and the rail's button is the way back.
+    expect(screen.queryByText('EVENTHUB REGISTRY')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Expand registry panel' })).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand registry panel' }));
+    expect(screen.getByText('EVENTHUB REGISTRY')).toBeDefined();
+    expect(
+      screen.queryByRole('button', { name: 'Collapse registry panel' }),
+    ).toBeDefined();
+  });
+});
+
+/**
  * Screen 12, built as an inert shell by product decision: there is no runner
  * service, so the run view may show the *absence* of a run and never an
  * invented one — no run number, no timings, no log lines (todo.txt, "WHY 11

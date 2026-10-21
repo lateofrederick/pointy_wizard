@@ -11,9 +11,10 @@ import { emit, tryParse } from '../../lib/pointy';
 import { INITIAL_RUN_STATE, runReducer } from '../../lib/runView';
 import type { PointyDocument } from '../../types/pointy';
 import { Canvas } from '../canvas/Canvas';
+import { ResizeHandle } from '../ui';
 import { Inspector } from './Inspector';
 import { OutputPanel } from './OutputPanel';
-import { Palette } from './Palette';
+import { Palette, PaletteRail } from './Palette';
 import { PublishModal } from './PublishModal';
 import { TopBar } from './TopBar';
 
@@ -37,6 +38,9 @@ import { TopBar } from './TopBar';
  */
 
 const DRAFT_KEY = 'pw-draft';
+
+/** The inspector's width, in px — default, drag floor, and drag ceiling. */
+const INSPECTOR_W = { default: 340, min: 280, max: 640 };
 
 export function AppShell({
   initial,
@@ -70,6 +74,17 @@ export function AppShell({
   // Screen 11's Publish modal is an inert shell — there is no registry service
   // behind it, so it is open/closed state only and never holds publish data.
   const [publishOpen, setPublishOpen] = useState(false);
+
+  /**
+   * Shell layout: the registry palette can be tucked away to give the canvas
+   * the width, and the inspector's divider drags — the event details column is
+   * read more than the palette is, so it gets the wider room on demand. Both
+   * are plain state: they survive tab and selection switches (they live above
+   * all of that) and reset with the page, which is the honest scope for a
+   * window layout preference.
+   */
+  const [paletteOpen, setPaletteOpen] = useState(true);
+  const [inspectorWidth, setInspectorWidth] = useState(INSPECTOR_W.default);
 
   // Screen 12's RUN OUTPUT is a view of the output panel, not a place the app
   // goes: there is no runner service (todo.txt, "WHY 11 AND 12 ARE NOT BUILT"),
@@ -235,7 +250,14 @@ export function AppShell({
       />
 
       <div className="flex min-h-0 flex-1">
-        <Palette onNewEvent={store.addBlankEvent} />
+        {paletteOpen ? (
+          <Palette
+            onNewEvent={store.addBlankEvent}
+            onCollapse={() => setPaletteOpen(false)}
+          />
+        ) : (
+          <PaletteRail onExpand={() => setPaletteOpen(true)} />
+        )}
 
         <main className="flex min-w-0 flex-1 flex-col">
           <div className="min-h-0 flex-1">
@@ -258,7 +280,19 @@ export function AppShell({
           </div>
         </main>
 
-        <Inspector store={store} />
+        {/* Fixed width so the panel and its divider move as one unit; the
+            handle straddles the panel's left edge. */}
+        <div className="relative flex shrink-0" style={{ width: inspectorWidth }}>
+          <Inspector store={store} />
+          <ResizeHandle
+            width={inspectorWidth}
+            min={INSPECTOR_W.min}
+            max={INSPECTOR_W.max}
+            label="Resize inspector"
+            onResize={setInspectorWidth}
+            onReset={() => setInspectorWidth(INSPECTOR_W.default)}
+          />
+        </div>
       </div>
 
       {publishOpen && (

@@ -83,7 +83,13 @@ const BADGE: Record<Namespace, { tint: string; text: string; glyph: string }> = 
   github: { tint: 'bg-flow-tint', text: 'text-flow', glyph: '⌥' },
 };
 
-export function Palette({ onNewEvent }: { onNewEvent?: () => void }) {
+export function Palette({
+  onNewEvent,
+  onCollapse,
+}: {
+  onNewEvent?: () => void;
+  onCollapse?: () => void;
+}) {
   const [query, setQuery] = useState('');
 
   const categories = CATEGORIES.map((c) => ({
@@ -96,6 +102,21 @@ export function Palette({ onNewEvent }: { onNewEvent?: () => void }) {
       <div className="flex items-center gap-2 px-[14px] pt-[18px] pb-3">
         <span className="ds-section-label">EVENTHUB REGISTRY</span>
         <span className="font-mono text-[9.4px] text-tertiary">32</span>
+        <span className="flex-1" />
+        {onCollapse && (
+          <button
+            type="button"
+            onClick={onCollapse}
+            aria-label="Collapse registry panel"
+            title="Collapse registry panel"
+            className={cn(
+              'cursor-pointer font-mono text-[8px] text-tertiary hover:text-secondary',
+              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-seq',
+            )}
+          >
+            ◀
+          </button>
+        )}
       </div>
 
       <div className="px-[14px] pb-3">
@@ -168,6 +189,30 @@ export function Palette({ onNewEvent }: { onNewEvent?: () => void }) {
         </Button>
       </div>
     </aside>
+  );
+}
+
+/**
+ * The registry collapsed: a sliver of rail whose only job is the way back.
+ * The toggle lives in the palette header when open and here when closed, so
+ * the control is always one click away and never needs hunting for.
+ */
+export function PaletteRail({ onExpand }: { onExpand: () => void }) {
+  return (
+    <div className="flex w-7 shrink-0 flex-col items-center border-r border-edge bg-bg-surface pt-4">
+      <button
+        type="button"
+        onClick={onExpand}
+        aria-label="Expand registry panel"
+        title="Expand registry panel"
+        className={cn(
+          'cursor-pointer font-mono text-[8px] text-tertiary hover:text-secondary',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-seq',
+        )}
+      >
+        ▶
+      </button>
+    </div>
   );
 }
 

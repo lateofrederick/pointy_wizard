@@ -70,7 +70,7 @@ export function Inspector({ store }: { store: PointyDocumentStore }) {
   );
 
   return (
-    <aside className="flex w-[340px] shrink-0 flex-col border-l border-edge bg-bg-surface">
+    <aside className="flex w-full shrink-0 flex-col border-l border-edge bg-bg-surface">
       <div className="flex items-center gap-2 border-l-2 border-template px-[14px] pt-4 pb-1">
         <h2 className="font-mono text-[14px] font-medium text-primary">{ref.name}</h2>
         <span className="flex-1" />
@@ -471,7 +471,7 @@ function PipelineInspector({ store }: { store: PointyDocumentStore }) {
     setSections((prev) => ({ ...prev, [id]: open }));
 
   return (
-    <aside className="flex w-[340px] shrink-0 flex-col border-l border-edge bg-bg-surface">
+    <aside className="flex w-full shrink-0 flex-col border-l border-edge bg-bg-surface">
       <div className="border-l-2 border-seq px-[14px] pt-4 pb-1">
         <h2 className="font-mono text-[14px] font-medium text-primary">{doc.name}</h2>
       </div>
