@@ -83,6 +83,42 @@ const BADGE: Record<Namespace, { tint: string; text: string; glyph: string }> = 
   github: { tint: 'bg-flow-tint', text: 'text-flow', glyph: '⌥' },
 };
 
+/**
+ * The panel toggle: a bordered square with three lines — the hamburger every
+ * platform uses for show/hide-a-panel. The first version was an 8px ◀ glyph,
+ * which is punctuation rather than a control: too small to spot, too faint
+ * to trust. Labels carry the direction; the icon only says "panel".
+ */
+function PanelToggleButton({
+  collapsed,
+  onClick,
+}: {
+  /** Which action the press performs — sets the label, not the icon. */
+  collapsed: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={collapsed ? 'Expand registry panel' : 'Collapse registry panel'}
+      title={collapsed ? 'Expand registry panel' : 'Collapse registry panel'}
+      className={cn(
+        'grid h-[22px] w-[22px] shrink-0 cursor-pointer place-items-center rounded-[6px]',
+        'border border-edge bg-bg-sunken text-tertiary',
+        'hover:border-edge-strong hover:text-secondary',
+        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-seq',
+      )}
+    >
+      <span aria-hidden className="flex flex-col gap-[2.5px]">
+        <span className="h-[1.5px] w-[11px] rounded-full bg-current" />
+        <span className="h-[1.5px] w-[11px] rounded-full bg-current" />
+        <span className="h-[1.5px] w-[11px] rounded-full bg-current" />
+      </span>
+    </button>
+  );
+}
+
 export function Palette({
   onNewEvent,
   onCollapse,
@@ -103,20 +139,7 @@ export function Palette({
         <span className="ds-section-label">EVENTHUB REGISTRY</span>
         <span className="font-mono text-[9.4px] text-tertiary">32</span>
         <span className="flex-1" />
-        {onCollapse && (
-          <button
-            type="button"
-            onClick={onCollapse}
-            aria-label="Collapse registry panel"
-            title="Collapse registry panel"
-            className={cn(
-              'cursor-pointer font-mono text-[8px] text-tertiary hover:text-secondary',
-              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-seq',
-            )}
-          >
-            ◀
-          </button>
-        )}
+        {onCollapse && <PanelToggleButton collapsed={false} onClick={onCollapse} />}
       </div>
 
       <div className="px-[14px] pb-3">
@@ -195,23 +218,13 @@ export function Palette({
 /**
  * The registry collapsed: a sliver of rail whose only job is the way back.
  * The toggle lives in the palette header when open and here when closed, so
- * the control is always one click away and never needs hunting for.
+ * the control is always one click away and never needs hunting for. Same
+ * square button as when open — only the label flips.
  */
 export function PaletteRail({ onExpand }: { onExpand: () => void }) {
   return (
-    <div className="flex w-7 shrink-0 flex-col items-center border-r border-edge bg-bg-surface pt-4">
-      <button
-        type="button"
-        onClick={onExpand}
-        aria-label="Expand registry panel"
-        title="Expand registry panel"
-        className={cn(
-          'cursor-pointer font-mono text-[8px] text-tertiary hover:text-secondary',
-          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-seq',
-        )}
-      >
-        ▶
-      </button>
+    <div className="flex w-9 shrink-0 flex-col items-center border-r border-edge bg-bg-surface pt-4">
+      <PanelToggleButton collapsed onClick={onExpand} />
     </div>
   );
 }
