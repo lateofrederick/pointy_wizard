@@ -12,6 +12,7 @@ import {
   snapshotDefinitions,
   writeDefinitionCache,
 } from '../definitionCache';
+import { attachDefinition, emit, events, tryParse } from '../pointy';
 import type { PointyDocument } from '../../types/pointy';
 
 function doc(overrides: Partial<PointyDocument> = {}): PointyDocument {
@@ -29,7 +30,7 @@ function doc(overrides: Partial<PointyDocument> = {}): PointyDocument {
 }
 
 const py = (filename: string) => ({ filename, source: 'print(1)' });
-const snapA = { definitions: { 'a.py': py('a.py') }, links: { a: 'a.py' } };
+const snapA = { definitions: { 'a.py': py('a.py') }, links: { 'local::a': 'a.py' } };
 
 /**
  * Put a record the module's own writer would never produce — the corruption
@@ -77,7 +78,8 @@ describe('snapshotDefinitions', () => {
 
     expect(snapshotDefinitions(d)).toEqual({
       definitions: { 'a.py': py('a.py'), 's.py': py('s.py') },
-      links: { a: 'a.py', s: 's.py' },
+      // Keyed by name, not by occurrence id — ids die with the parse.
+      links: { 'local::A': 'a.py', 'local::S': 's.py' },
     });
   });
 });
@@ -90,19 +92,55 @@ describe('applyDefinitionSnapshot', () => {
       chain: { kind: 'event', ref: { id: 'a', name: 'A', namespace: 'local', attributes: [] } },
     });
 
-    const merged = applyDefinitionSnapshot(loaded, snapA);
+    const merged = applyDefinitionSnapshot(loaded, {
+      definitions: { 'a.py': py('a.py') },
+      links: { 'local::A': 'a.py' },
+    });
     const ref = merged.chain?.kind === 'event' ? merged.chain.ref : undefined;
     expect(ref?.definitionId).toBe('a.py');
     expect(merged.definitions['a.py']).toEqual(py('a.py'));
+  });
+
+  it('restores across a save/load round trip, where parse mints fresh ids', () => {
+    // The real failure this keying fixes: same source, brand-new ids.
+    const first = tryParse('DoWork\n', 't');
+    if (!first.ok) throw new Error(first.error);
+    const linked = attachDefinition(first.doc, events(first.doc.chain)[0].id);
+    if (linked.refused) throw new Error(linked.refused);
+    const snap = snapshotDefinitions(linked.doc);
+    expect(snap.links).toEqual({ 'local::DoWork': 'do_work.py' });
+
+    // emit has no definitionId syntax, and parse mints new ids — the exact
+    // round trip a refresh performs.
+    const reloaded = tryParse(emit(linked.doc), 't');
+    if (!reloaded.ok) throw new Error(reloaded.error);
+    expect(events(reloaded.doc.chain)[0].id).not.toBe(events(linked.doc.chain)[0].id);
+
+    const merged = applyDefinitionSnapshot(reloaded.doc, snap);
+    expect(events(merged.chain)[0].definitionId).toBe('do_work.py');
+    expect(merged.definitions['do_work.py']).toBeDefined();
   });
 
   it('refuses a dangling link rather than pointing at a missing file', () => {
     const loaded = doc({
       chain: { kind: 'event', ref: { id: 'a', name: 'A', namespace: 'local', attributes: [] } },
     });
-    const merged = applyDefinitionSnapshot(loaded, { definitions: {}, links: { a: 'a.py' } });
+    const merged = applyDefinitionSnapshot(loaded, {
+      definitions: {},
+      links: { 'local::A': 'a.py' },
+    });
     const ref = merged.chain?.kind === 'event' ? merged.chain.ref : undefined;
     expect(ref?.definitionId).toBeUndefined();
+  });
+
+  it('links every occurrence of a reused name — one event, one file', () => {
+    const first = tryParse('A -> R(\n  0 -> B,\n  1 -> A\n)\n', 't');
+    if (!first.ok) throw new Error(first.error);
+    const snap = { definitions: { 'a.py': py('a.py') }, links: { 'local::A': 'a.py' } };
+    const merged = applyDefinitionSnapshot(first.doc, snap);
+    const occurrences = events(merged.chain).filter((r) => r.name === 'A');
+    expect(occurrences).toHaveLength(2);
+    expect(occurrences.every((r) => r.definitionId === 'a.py')).toBe(true);
   });
 });
 

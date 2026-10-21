@@ -521,6 +521,30 @@ Node ids (3:2) open in Figma via ?node-id=3-2
       header, the space genuinely returning to the canvas. The toggle
       button got an aria-label (Collapse/Expand output panel) — it was an
       unnamed ▼. 335 green, gate clean.
+[x] Follow-up — ROOT CAUSE of "definitions vanish on refresh": links were
+      keyed by EVENT ID, and ids do not survive a parse. newEventId() mints
+      a fresh timestamp id on every parse of the same source (parse.ts calls
+      it per occurrence), so the id the link was cached against is gone by
+      the time the page reloads — the name-keyed definitions map survived
+      (that half looked fine) while every link silently failed to match, and
+      the write-back that followed then ERASED links from the store. Found
+      by reproducing in a real browser with playwright (jsdom +
+      fake-indexeddb cannot catch it — they never re-parse): IDB after click
+      held {emvi5…: do_work.py}, after reload the record read links: {} with
+      the file still there. FIXED by keying links on `namespace::name` — the
+      identity flow.ts already uses for CFG-reuse marking, and the identity
+      the Python filename derives from (snake(ref.name)): two occurrences of
+      one event converge on one link, which matches file-per-name reality.
+      Regression test runs the REAL round trip (attachDefinition → emit →
+      tryParse asserts brand-new ids → apply restores by name); verified
+      live: reload keeps {"local::DoWork": "do_work.py"}, fix button stays
+      gone. KNOWN COST, documented in the module: renaming an event changes
+      its key, so a rename loses the CACHED link on the next reload (the
+      file stays; the fix button reappears and reattaches). NOT fixed here,
+      same root, flagged in §11: layout is id-keyed too, so node positions
+      reset to auto-layout on every reload — changing id minting would
+      ripple through layout/selection/reactflow keys and belongs with the
+      language-round-trip design. 345 green, gate clean.
 
 
 == UNDESIGNED — needs design before planning ==                              §11
@@ -528,8 +552,15 @@ Node ids (3:2) open in Figma via ?node-id=3-2
 [ ] Definition links in the round-trip. ref.definitionId exists only in
     memory: .pointy has no syntax for it and the server has no column, so
     every reload re-parses a link-less doc. lib/definitionCache.ts bridges
-    this in the browser (done 2026-10-20) — design the language or server
-    fix, then delete that module.
+    this in the browser (localStorage 2026-10-20, IndexedDB + name-keyed
+    links 2026-10-21) — design the language or server fix, then delete
+    that module. The same design must fix STABLE EVENT IDENTITY: ids are
+    minted fresh per parse, so anything id-keyed dies at the boundary —
+    layout (node positions reset to auto-layout on every reload, today) and
+    selection included. Name-keying the cache was the careful scoped move;
+    id minting is a language-level decision (occurrence ids distinguish
+    CFG-reuse nodes, duplicateEvent clones names on purpose) — do not
+    change it casually.
 [ ] Browsing EventHub: results, component detail, versions, install
 [ ] Run history: list of runs, per-event logs, traceback drill-down
 [ ] Import flow: paste/upload -> parse -> canvas

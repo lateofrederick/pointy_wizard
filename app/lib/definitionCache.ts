@@ -11,9 +11,25 @@ import type { EventDefinition, EventRef, PointyDocument } from '../types/pointy'
  * no syntax for the link (parse.ts hands back `definitions: {}` and emit
  * never writes definitionId), and while the server round-trips the
  * definitions map (loadPipeline applies `stored.definitions`), the links die
- * with the parse. Unsaved drafts are self-sufficient — `pw-draft` stores the
- * whole document including links — so this store is belt-and-braces for
- * drafts and the only survival path for pipelines.
+ * with the parse. Unsaved drafts are self-sufficient for the FILES —
+ * `pw-draft` stores the whole document including `definitions` — so this
+ * store is belt-and-braces for drafts and the only survival path for
+ * pipelines.
+ *
+ * WHY LINKS ARE KEYED BY `namespace::name`, NOT BY EVENT ID: event ids do
+ * not survive a parse. `newEventId()` mints a fresh timestamp id on every
+ * parse of the same source (parse.ts calls it per event occurrence), so the
+ * id the link was cached against is guaranteed to be gone after a reload —
+ * an id-keyed lookup restores nothing, and the write-back that follows then
+ * erases the links from the store (the exact bug this keying fixes: the
+ * definitions map survived, because it is filename-keyed, while every link
+ * vanished). Names are the identity the rest of the app already assumes —
+ * the Python file is `snake(ref.name)`, and flow.ts keys CFG-reuse marking
+ * on `namespace::name`. Two occurrences of one event therefore converge on
+ * one link, which matches the file-per-name reality: they could not have
+ * different files anyway. Known cost: renaming an event changes its key, so
+ * a rename loses the cached link on the next reload (the file itself stays,
+ * filename-keyed); the language/server fix below also fixes that.
  *
  * Storage is IndexedDB: one database, one store, one record per workspace
  * scope. localStorage would hold a few kilobytes of Python fine, but it is a
@@ -39,15 +55,25 @@ import type { EventDefinition, EventRef, PointyDocument } from '../types/pointy'
  * localStorage write has the same window.
  *
  * THE REAL FIX, when it is designed: express the link in the language (a
- * definition directive in `.pointy`) or as a server column, make emit/
- * parse/save/load carry it, and delete this file. Until then the store wins
- * on load — it is the only place pipeline links exist at all.
+ * definition directive in `.pointy`) or as a server column — with stable
+ * event identity, which also unbreaks layout (positions are id-keyed too,
+ * and every reload currently drops them to auto-layout) — and delete this
+ * file. Until then the store wins on load — it is the only place pipeline
+ * links exist at all.
  */
 export interface DefinitionSnapshot {
   definitions: Record<string, EventDefinition>;
-  /** event id → definition id (the file's key in `definitions`). */
+  /** `namespace::name` → definition id (the file's key in `definitions`). */
   links: Record<string, string>;
 }
+
+/**
+ * The stable identity of an event occurrence's source name — what a link is
+ * keyed by. Occurrence ids are per-parse; this is not. Same key flow.ts
+ * already uses to mark CFG reuse.
+ */
+export const linkKey = (ref: Pick<EventRef, 'namespace' | 'name'>) =>
+  `${ref.namespace}::${ref.name}`;
 
 /**
  * The scope key for a workspace. `pipeline:<id>` and `draft` are
@@ -61,7 +87,7 @@ export const pipelineScope = (pipelineId: string) => `pipeline:${pipelineId}`;
 export function snapshotDefinitions(doc: PointyDocument): DefinitionSnapshot {
   const links: Record<string, string> = {};
   for (const ref of [...events(doc.chain), ...doc.staged]) {
-    if (ref.definitionId) links[ref.id] = ref.definitionId;
+    if (ref.definitionId) links[linkKey(ref)] = ref.definitionId;
   }
   return { definitions: doc.definitions, links };
 }
@@ -79,7 +105,7 @@ export function applyDefinitionSnapshot(
   snap: DefinitionSnapshot,
 ): PointyDocument {
   const restore = (r: EventRef): EventRef => {
-    const link = snap.links[r.id];
+    const link = snap.links[linkKey(r)];
     return link && snap.definitions[link] ? { ...r, definitionId: link } : r;
   };
   return {
