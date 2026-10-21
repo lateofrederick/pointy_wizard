@@ -10,6 +10,9 @@ import { signInHref } from '../../lib/routes';
 import { emit, tryParse } from '../../lib/pointy';
 import {
   applyDefinitionSnapshot,
+  deleteDefinitionCache,
+  draftScope,
+  pipelineScope,
   readDefinitionCache,
   snapshotDefinitions,
   writeDefinitionCache,
@@ -140,30 +143,42 @@ export function AppShell({
   /* --- definition cache --------------------------------------------------- */
 
   // Event definitions cannot survive a reload any other way: `.pointy` source
-  // has no syntax for the event→file link and the server round-trips only the
-  // definitions map, so the link is restored from the browser. See
-  // lib/definitionCache.ts for why this exists and what deletes it.
-  const defScope = pipelineId ?? 'draft';
-  // Writes stay off until the merge has been applied: writing before that
-  // would clobber the cache with the just-loaded, link-less document. Both
-  // setDoc and this flag land in the same batch, so the first write sees the
-  // merged doc.
+  // has no syntax for the event→file link, and the server round-trips the
+  // definitions map but not the links, so the link is restored from the
+  // browser. See lib/definitionCache.ts for why this exists, how workspaces
+  // stay apart, and what deletes it.
+  const defScope = pipelineId ? pipelineScope(pipelineId) : draftScope;
+  // Writes stay off until the store has been consulted: writing before that
+  // would clobber a cached snapshot with the just-loaded, link-less document.
   const [defsReady, setDefsReady] = useState(false);
 
+  // Async (IndexedDB): the read settles in a later task, so the snapshot
+  // merges into whatever the document is by then — a functional update, which
+  // preserves any edit made in the gap. A scope change cancels the in-flight
+  // read so a slow pipeline:A read cannot land on pipeline:B's document.
   useEffect(() => {
     if (!keepDraft) return;
-    const snap = readDefinitionCache(defScope);
-    if (snap) setDoc((d) => applyDefinitionSnapshot(d, snap));
-    setDefsReady(true);
+    let cancelled = false;
+    void readDefinitionCache(defScope).then((snap) => {
+      if (cancelled) return;
+      if (snap) setDoc((d) => applyDefinitionSnapshot(d, snap));
+      setDefsReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [keepDraft, defScope, setDoc]);
 
   // Rewrite as the document changes. Debounced like the draft; the cleanup
   // writes rather than only clearing, so an unmount mid-window — sign-in
-  // redirect, save-and-navigate — lands the last write instead of dropping it.
-  // The extra intermediate writes cost one small JSON blob.
+  // redirect, save-and-navigate — lands the last write instead of dropping
+  // it. The write is async, but the page is still alive after a React
+  // unmount, so the transaction completes.
   useEffect(() => {
     if (!keepDraft || !defsReady) return;
-    const write = () => writeDefinitionCache(defScope, snapshotDefinitions(store.doc));
+    const write = () => {
+      void writeDefinitionCache(defScope, snapshotDefinitions(store.doc));
+    };
     const id = window.setTimeout(write, 400);
     return () => {
       window.clearTimeout(id);
@@ -171,13 +186,27 @@ export function AppShell({
     };
   }, [keepDraft, defsReady, defScope, store.doc]);
 
-  // A real refresh or tab close does not run React's cleanups — beforeunload
-  // is the only hook that still has the document in hand.
+  // Leaving the page entirely. React's cleanups do not run on a real refresh
+  // or tab close, and an IndexedDB write started while the page dies may be
+  // killed before it commits — unlike the synchronous localStorage flush this
+  // replaced. pagehide is the unload hook that still fires reliably;
+  // visibilitychange→hidden is the one that still has a live event loop, and
+  // covers tab switches and mobile app-switches where the page survives.
+  // Residual loss window: one debounce period of definition edits.
   useEffect(() => {
     if (!keepDraft || !defsReady) return;
-    const flush = () => writeDefinitionCache(defScope, snapshotDefinitions(store.doc));
-    window.addEventListener('beforeunload', flush);
-    return () => window.removeEventListener('beforeunload', flush);
+    const flush = () => {
+      void writeDefinitionCache(defScope, snapshotDefinitions(store.doc));
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') flush();
+    };
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [keepDraft, defsReady, defScope, store.doc]);
 
   /* --- saving ------------------------------------------------------------- */
@@ -224,6 +253,16 @@ export function AppShell({
         definitions: store.doc.definitions,
         sources: store.doc.sources,
       });
+      // The navigation remounts this shell with pipelineScope(pipeline.id),
+      // and that scope is empty until this lands — the links would die on
+      // this very jump if the snapshot stayed under the draft. Awaited, so
+      // the new mount's read is ordered after the write on the shared
+      // connection; the draft's own record goes with it.
+      await writeDefinitionCache(
+        pipelineScope(pipeline.id),
+        snapshotDefinitions(store.doc),
+      );
+      void deleteDefinitionCache(draftScope);
       clearDraft();
       router.push(`/pipelines/${pipeline.id}`);
     } catch (e) {

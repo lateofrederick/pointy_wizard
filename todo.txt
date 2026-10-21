@@ -485,6 +485,31 @@ Node ids (3:2) open in Figma via ?node-id=3-2
       only; shell.test's mount() now threads keepDraft (default off).
       THE REAL FIX, still to design: express the link in the language or
       as a server column, then delete this module. 334 green, gate clean.
+[x] Follow-up — the definition store moved to IndexedDB, and workspaces
+      are keyed to stay apart. Same job (bridge the missing definition→file
+      link until the backend round-trips it), better vehicle: one database
+      ('pointy-editor'), one store ('definitions'), one record per workspace
+      — key 'pipeline:<id>' for a saved pipeline, 'draft' for the unsaved
+      editor slot (the slot pw-draft itself uses). Explicit prefixes, so a
+      pipeline id can never collide with the draft; NOT user-scoped, because
+      the draft is browser-global and scoping definitions by user while the
+      draft is not would desync the two. IndexedDB's shape (named stores,
+      keyed records, async) points at the future backend without a caller
+      rewrite; localStorage stays for the draft and the once-only flags.
+      Three honest design points, all in code comments: (1) the restore is
+      async now, so writes stay gated until the read settles and a scope
+      change cancels the in-flight read — a slow pipeline:A read cannot
+      land on pipeline:B; (2) IndexedDB cannot guarantee an unload write the
+      way localStorage's sync flush could, so AppShell flushes on pagehide
+      AND visibilitychange→hidden (the hook that still has a live event
+      loop) — residual loss window is one debounce period, same as the
+      draft's own write; (3) first save of a draft now MOVES the snapshot to
+      the pipeline's scope before navigating — previously the new mount read
+      an empty pipeline scope and the links died on that very jump (a real
+      bug in the localStorage version, pinned by a test). Tests: fake-
+      indexeddb for the real transaction semantics; scope isolation, raw
+      corrupt-record defence, delete-one-vs-clear-all, the three flush
+      paths, and the save migration all covered. 343 green, gate clean.
 [x] Follow-up — the output panel keeps its height whether or not problems
       show. The dark strip: OutputPanel's section hugged its content inside
       a fixed 280px wrapper, so when the PROBLEMS column cleared the panel

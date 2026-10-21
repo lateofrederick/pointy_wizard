@@ -2,11 +2,17 @@
  * @vitest-environment jsdom
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { AppShell } from '../shell/AppShell';
 import { ThemeProvider } from '../../lib/theme';
 import { SessionProvider } from '../../lib/session';
 import { sampleDocument } from '../../lib/sampleDocument';
+import {
+  clearDefinitionStore,
+  draftScope,
+  pipelineScope,
+  readDefinitionCache,
+} from '../../lib/definitionCache';
 import type { PointyDocument } from '../../types/pointy';
 import type { SessionUser } from '../../lib/api';
 
@@ -33,6 +39,24 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 
+/**
+ * The API is real everywhere except the two save calls the first-save test
+ * drives — that test asserts what happens AFTER a successful save (the
+ * definition snapshot moving scopes), which needs the save to succeed without
+ * a server. Everything else in api is the actual implementation.
+ */
+vi.mock('../../lib/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/api')>();
+  return {
+    ...actual,
+    api: {
+      ...actual.api,
+      createPipeline: vi.fn(),
+      savePipeline: vi.fn(),
+    },
+  };
+});
+
 const someone: SessionUser = { id: 'usr_1', email: 'lateo@volnux.dev', name: 'lateo' };
 
 function mount({
@@ -43,9 +67,10 @@ function mount({
   user?: SessionUser | null;
   initial?: PointyDocument;
   /**
-   * Draft/definition-cache persistence is off by default here so unrelated
+   * Draft/definition-store persistence is off by default here so unrelated
    * tests start from a clean browser; the tests that assert persistence pass
-   * true (and rely on the global localStorage.clear() for isolation).
+   * true (and rely on the global localStorage.clear() and
+   * clearDefinitionStore() for isolation).
    */
   keepDraft?: boolean;
 } = {}) {
@@ -59,14 +84,28 @@ function mount({
 }
 
 // `globals` is off, so testing-library's automatic cleanup is not registered.
-// localStorage too: mount() writes real flags (the legend's once-only marker,
-// the draft), and a test that asserts first-run behaviour must not inherit
-// the previous test's history.
-afterEach(() => {
+// localStorage and the IndexedDB definition store too: mount() writes real
+// flags (the legend's once-only marker, the draft, a definition snapshot),
+// and a test that asserts first-run behaviour must not inherit the previous
+// test's history.
+afterEach(async () => {
   cleanup();
   push.mockClear();
   localStorage.clear();
+  await clearDefinitionStore();
 });
+
+/**
+ * The definition-store restore is async (IndexedDB) and writes stay gated
+ * until it settles, so a test that interacts immediately would race the gate
+ * and cache nothing. fake-indexeddb resolves on the macrotask queue; 20ms is
+ * an eternity past that.
+ */
+async function settled() {
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 20));
+  });
+}
 
 /**
  * A local event with no definitionId: lint's missing-definition is the one
@@ -431,37 +470,123 @@ describe('Workspace rename', () => {
  * when the link is absent, and its fix button comes back with it.
  */
 describe('Definition cache across a refresh', () => {
-  it('keeps a definition added this session after a refresh', () => {
+  it('keeps a definition added this session after a refresh', async () => {
     // Control: no definition yet, so the diagnostic and its PROBLEMS column
-    // are up. keepDraft=true — the cache is editor persistence, off in the
+    // are up. keepDraft=true — the store is editor persistence, off in the
     // sandbox.
     mount({ initial: bare, keepDraft: true });
+    await settled();
     expect(screen.getByText('PROBLEMS')).toBeDefined();
 
     fireEvent.click(screen.getByRole('button', { name: 'Add event definition →' }));
     expect(screen.queryByText('PROBLEMS')).toBeNull();
 
-    // A real refresh does not run React's cleanups — beforeunload is the
-    // only flush — then a fresh mount on the same link-less initial doc.
-    fireEvent(window, new Event('beforeunload'));
+    // A real refresh does not run React's cleanups — pagehide is the unload
+    // hook that still fires — then a fresh mount on the same link-less
+    // initial doc. The restore is async, hence the waitFor.
+    fireEvent(window, new Event('pagehide'));
     cleanup();
     mount({ initial: bare, keepDraft: true });
-
-    // Lint sees a linked definition again: no diagnostic, no fix button.
+    await waitFor(() => {
+      // Lint sees a linked definition again: no diagnostic, no fix button.
+      expect(screen.queryByRole('button', { name: 'Add event definition →' })).toBeNull();
+    });
     expect(screen.queryByText('PROBLEMS')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Add event definition →' })).toBeNull();
   });
 
-  it('lands the write on unmount even inside the debounce window', () => {
-    // No beforeunload, no sleep: unmount alone must flush — the sign-in
+  it('flushes when the tab is hidden', async () => {
+    // The hook that still has a live event loop: tab switches and mobile
+    // app-switches land here, and unlike pagehide the write is not racing
+    // the page's death.
+    const { unmount } = mount({ initial: bare, keepDraft: true });
+    await settled();
+    fireEvent.click(screen.getByRole('button', { name: 'Add event definition →' }));
+    Object.defineProperty(document, 'visibilityState', {
+      value: 'hidden',
+      configurable: true,
+    });
+    document.dispatchEvent(new Event('visibilitychange'));
+    delete (document as unknown as Record<string, unknown>).visibilityState;
+    unmount();
+
+    mount({ initial: bare, keepDraft: true });
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Add event definition →' })).toBeNull();
+    });
+  });
+
+  it('lands the write on unmount even inside the debounce window', async () => {
+    // No unload event, no sleep: unmount alone must flush — the sign-in
     // redirect and save-and-navigate path.
     const { unmount } = mount({ initial: bare, keepDraft: true });
+    await settled();
     fireEvent.click(screen.getByRole('button', { name: 'Add event definition →' }));
     unmount();
 
     mount({ initial: bare, keepDraft: true });
-    expect(screen.queryByRole('button', { name: 'Add event definition →' })).toBeNull();
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Add event definition →' })).toBeNull();
+    });
     expect(screen.queryByText('PROBLEMS')).toBeNull();
+  });
+
+  it('keeps two pipelines and the draft apart', async () => {
+    // Workspace A (unsaved draft): fix the missing definition, which links
+    // and caches it under the draft scope.
+    const a = mount({ initial: bare, keepDraft: true });
+    await settled();
+    fireEvent.click(screen.getByRole('button', { name: 'Add event definition →' }));
+    a.unmount();
+
+    // Premise, asserted rather than assumed: A's workspace really did cache
+    // something. Without this the assertion on B would pass vacuously.
+    await waitFor(async () => {
+      expect(await readDefinitionCache(draftScope)).not.toBeNull();
+    });
+
+    // Workspace B — a different pipeline, same link-less starting document.
+    // It reads its own scope and must not see A's snapshot.
+    render(
+      <ThemeProvider>
+        <SessionProvider user={null}>
+          <AppShell initial={bare} keepDraft pipelineId="pipe_b" />
+        </SessionProvider>
+      </ThemeProvider>,
+    );
+    await settled();
+    // B's lint still reports the missing definition and offers the fix.
+    expect(screen.getByRole('button', { name: 'Add event definition →' })).toBeDefined();
+    expect(screen.getByText('PROBLEMS')).toBeDefined();
+  });
+});
+
+describe('First save of a draft', () => {
+  it('moves the definition snapshot to the pipeline’s scope before navigating', async () => {
+    const { api: apiMock } = await import('../../lib/api');
+    vi.mocked(apiMock.createPipeline).mockResolvedValue({
+      pipeline: { id: 'p_new', name: 'bare', updatedAt: '', source: '' },
+    } as never);
+    vi.mocked(apiMock.savePipeline).mockResolvedValue({
+      updatedAt: '2026-10-21T00:00:00.000Z',
+    } as never);
+
+    mount({ user: someone, initial: bare, keepDraft: true });
+    await settled();
+    fireEvent.click(screen.getByRole('button', { name: 'Add event definition →' }));
+    fireEvent.click(screen.getByRole('button', { name: /Save to my pipelines/ }));
+
+    // The save chain ends in the navigation to the pipeline's own URL.
+    await waitFor(() => {
+      expect(push).toHaveBeenCalledWith('/pipelines/p_new');
+    });
+
+    // The snapshot moved, it did not stay behind or get copied: the draft
+    // scope is empty (the draft itself was cleared too) and the pipeline's
+    // scope holds the link the draft had.
+    expect(await readDefinitionCache(draftScope)).toBeNull();
+    const landed = await readDefinitionCache(pipelineScope('p_new'));
+    expect(landed).not.toBeNull();
+    expect(Object.keys(landed!.links)).toHaveLength(1);
   });
 });
 

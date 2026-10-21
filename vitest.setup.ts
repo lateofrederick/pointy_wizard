@@ -1,4 +1,10 @@
 /**
+ * jsdom has no IndexedDB; fake-indexeddb provides it so the definition store's
+ * tests exercise the real transaction semantics rather than a mock of them.
+ */
+import 'fake-indexeddb/auto';
+
+/**
  * jsdom has no layout engine, so reactflow's measurement APIs are absent.
  * These stubs let the component tree mount; they do not make layout real, so
  * anything that depends on measured geometry is out of scope for these tests.

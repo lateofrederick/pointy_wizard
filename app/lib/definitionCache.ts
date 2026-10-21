@@ -2,28 +2,46 @@ import { events, mapEvents } from './pointy';
 import type { EventDefinition, EventRef, PointyDocument } from '../types/pointy';
 
 /**
- * Definition cache — the browser's memory for event definitions until the
+ * Definition store — the browser's memory for event definitions until the
  * backend round-trips them properly.
  *
  * WHY THIS EXISTS: a definition is TWO facts — the Python file
  * (`doc.definitions`) and the link from an event to it (`ref.definitionId`).
- * Neither survives a reload today: `.pointy` source has no syntax for the
- * link (parse.ts hands back `definitions: {}` and emit never writes
- * definitionId), and the server stores the definitions map but not the links.
- * So after any refresh the event silently comes back "unlinked" and the
- * Python looks lost even when the map was carried across.
+ * Neither survives a reload of a SAVED pipeline today: `.pointy` source has
+ * no syntax for the link (parse.ts hands back `definitions: {}` and emit
+ * never writes definitionId), and while the server round-trips the
+ * definitions map (loadPipeline applies `stored.definitions`), the links die
+ * with the parse. Unsaved drafts are self-sufficient — `pw-draft` stores the
+ * whole document including links — so this store is belt-and-braces for
+ * drafts and the only survival path for pipelines.
  *
- * This module keeps both facts in localStorage — the map plus an
- * event-id → definition-id table — scoped per pipeline ('draft' for the
- * unsaved editor, matching the draft's own single-key scheme). AppShell
- * applies the snapshot once on load and rewrites it as the document
- * changes, with a beforeunload flush so a refresh inside the debounce
- * window still lands.
+ * Storage is IndexedDB: one database, one store, one record per workspace
+ * scope. localStorage would hold a few kilobytes of Python fine, but it is a
+ * synchronous API with a hard per-origin cap, and the direction of travel is
+ * that the real backend owns this data — IndexedDB's shape (named stores,
+ * keyed records, async) maps onto that future without a rewrite of callers.
+ *
+ * SCOPE — how workspaces stay apart: the key is `pipeline:<id>` for a saved
+ * pipeline and `draft` for the single unsaved editor slot (the same slot
+ * `pw-draft` uses). Two pipelines never share a record; the draft never
+ * bleeds into a pipeline or vice versa. Deliberately NOT user-scoped: the
+ * draft itself is browser-global, so scoping definitions by user while the
+ * draft is not would desync the two stores (definitions restored for a
+ * document that is not). When the backend owns definitions, ownership moves
+ * there and this file goes away.
+ *
+ * UNLOAD, HONESTLY: IndexedDB writes are asynchronous, so a write started
+ * while the page is dying (the old localStorage beforeunload flush) may be
+ * killed before it commits. AppShell flushes on pagehide and on
+ * visibilitychange→hidden — the latter still has a live event loop, and is
+ * the hook that actually lands tab switches and mobile app-switches. The
+ * residual window is one debounce period of definition edits; the draft's own
+ * localStorage write has the same window.
  *
  * THE REAL FIX, when it is designed: express the link in the language (a
  * definition directive in `.pointy`) or as a server column, make emit/
- * parse/save/load carry it, and delete this file. Until then the cache
- * wins on load — it is the only place the links exist at all.
+ * parse/save/load carry it, and delete this file. Until then the store wins
+ * on load — it is the only place pipeline links exist at all.
  */
 export interface DefinitionSnapshot {
   definitions: Record<string, EventDefinition>;
@@ -31,7 +49,13 @@ export interface DefinitionSnapshot {
   links: Record<string, string>;
 }
 
-const keyFor = (scope: string) => `pw-defs-${scope}`;
+/**
+ * The scope key for a workspace. `pipeline:<id>` and `draft` are
+ * self-describing and cannot collide — a raw pipeline id could one day be the
+ * literal string "draft".
+ */
+export const draftScope = 'draft';
+export const pipelineScope = (pipelineId: string) => `pipeline:${pipelineId}`;
 
 /** Both facts, taken from the live document. */
 export function snapshotDefinitions(doc: PointyDocument): DefinitionSnapshot {
@@ -47,7 +71,7 @@ export function snapshotDefinitions(doc: PointyDocument): DefinitionSnapshot {
  *
  * Links only restore when they resolve — a dangling pointer is worse than
  * none: the inspector would offer to edit a file that is not there. The
- * cache's definitions win per key, because they were written after any
+ * store's definitions win per key, because they were written after any
  * server or draft copy of the same file.
  */
 export function applyDefinitionSnapshot(
@@ -66,22 +90,119 @@ export function applyDefinitionSnapshot(
   };
 }
 
-export function readDefinitionCache(scope: string): DefinitionSnapshot | null {
+/* --- the store itself ----------------------------------------------------- */
+
+const DB_NAME = 'pointy-editor';
+const DB_VERSION = 1;
+const STORE = 'definitions';
+
+/** One record per workspace scope. `savedAt` is for debugging, nothing reads it. */
+interface DefinitionRecord {
+  scope: string;
+  definitions: Record<string, EventDefinition>;
+  links: Record<string, string>;
+  savedAt: string;
+}
+
+function isRecord(value: unknown): value is DefinitionRecord {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as DefinitionRecord).scope === 'string' &&
+    typeof (value as DefinitionRecord).definitions === 'object' &&
+    (value as DefinitionRecord).definitions !== null
+  );
+}
+
+/** Promisify an IDBRequest. */
+function req<T>(request: IDBRequest<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+// One shared connection: same-connection transactions are ordered, so a read
+// issued after a write sees that write — the read-after-write guarantee the
+// editor relies on (save-then-navigate, unmount-flush-then-remount).
+let dbPromise: Promise<IDBDatabase> | null = null;
+
+function openStore(): Promise<IDBDatabase> {
+  dbPromise ??= new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onupgradeneeded = () => {
+      request.result.createObjectStore(STORE, { keyPath: 'scope' });
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+    // Another tab holds an older version open. Nothing older exists yet;
+    // treat as no store rather than hanging the editor.
+    request.onblocked = () => reject(new Error('pointy-editor store blocked'));
+  }).catch((error) => {
+    dbPromise = null;
+    throw error;
+  });
+  return dbPromise;
+}
+
+/**
+ * The snapshot for one workspace, or null when there is none (or no
+ * store — private-mode restrictions degrade to "cannot remember", never to a
+ * broken editor).
+ */
+export async function readDefinitionCache(
+  scope: string,
+): Promise<DefinitionSnapshot | null> {
   try {
-    const raw = localStorage.getItem(keyFor(scope));
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<DefinitionSnapshot> | null;
-    if (!parsed || typeof parsed !== 'object' || !parsed.definitions) return null;
-    return { definitions: parsed.definitions, links: parsed.links ?? {} };
+    const db = await openStore();
+    const record = await req(
+      db.transaction(STORE, 'readonly').objectStore(STORE).get(scope),
+    );
+    if (!isRecord(record)) return null;
+    return { definitions: record.definitions, links: record.links ?? {} };
   } catch {
     return null;
   }
 }
 
-export function writeDefinitionCache(scope: string, snap: DefinitionSnapshot): void {
+/** Record the snapshot for one workspace. Last write wins; failures are silent. */
+export async function writeDefinitionCache(
+  scope: string,
+  snap: DefinitionSnapshot,
+): Promise<void> {
   try {
-    localStorage.setItem(keyFor(scope), JSON.stringify(snap));
+    const db = await openStore();
+    const record: DefinitionRecord = {
+      scope,
+      definitions: snap.definitions,
+      links: snap.links,
+      savedAt: new Date().toISOString(),
+    };
+    await req(db.transaction(STORE, 'readwrite').objectStore(STORE).put(record));
   } catch {
-    /* private mode or quota: the editor still works, it just cannot remember. */
+    /* no store: the editor still works, it just cannot remember. */
+  }
+}
+
+/** Drop one workspace's record — a draft whose snapshot just moved to a pipeline. */
+export async function deleteDefinitionCache(scope: string): Promise<void> {
+  try {
+    const db = await openStore();
+    await req(db.transaction(STORE, 'readwrite').objectStore(STORE).delete(scope));
+  } catch {
+    /* nothing to clean up. */
+  }
+}
+
+/**
+ * Empty the whole store. Tests use it for isolation; a future sign-out that
+ * wants local copies gone uses it too.
+ */
+export async function clearDefinitionStore(): Promise<void> {
+  try {
+    const db = await openStore();
+    await req(db.transaction(STORE, 'readwrite').objectStore(STORE).clear());
+  } catch {
+    /* nothing to clear. */
   }
 }
